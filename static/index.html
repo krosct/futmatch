@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FutMatch ⚽ — Organizador Inteligente de Futebol</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚽</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="/static/icons/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+  <link rel="alternate icon" href="/favicon.ico" sizes="48x48 32x32 16x16">
 
   <!-- PWA & Mobile Meta Tags -->
   <link rel="manifest" href="/manifest.json">
@@ -12,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="FutMatch">
-  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -413,6 +415,14 @@
                 <h3 class="text-lg font-bold text-white flex items-center gap-2">
                   <i data-lucide="shield" class="w-5 h-5 text-neon-accent"></i>
                   <span>Times Montados</span>
+                  <div class="relative group/info inline-flex items-center">
+                    <button type="button" aria-label="Informações do cálculo" title="Balanceamento: 40% estrelas base + 60% histórico recente (vitórias e gols)" class="w-5 h-5 rounded-md bg-cardLight hover:bg-slate-700 text-slate-400 hover:text-neon-accent border border-borderLight flex items-center justify-center transition cursor-help">
+                      <i data-lucide="info" class="w-3.5 h-3.5 stroke-[2.2]"></i>
+                    </button>
+                    <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/info:block pointer-events-none z-50 w-64 p-2 bg-slate-900/95 backdrop-blur border border-borderLight text-slate-200 text-xs rounded-xl shadow-2xl text-center leading-snug">
+                      Balanceamento: 40% estrelas base + 60% histórico recente (vitórias e gols).
+                    </div>
+                  </div>
                 </h3>
                 <p class="text-xs text-slate-400">Distribuição com equilíbrio por nível e posições</p>
               </div>

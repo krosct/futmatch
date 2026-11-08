@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0b3d2e"/><stop offset="1" stop-color="#062a20"/></linearGradient>
+<linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4ff5a"/><stop offset=".5" stop-color="#00ff9d"/><stop offset="1" stop-color="#00c2ff"/></linearGradient>
+<filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="14"/></filter></defs>
+<rect width="512" height="512" fill="url(#bg)"/>
+<g fill="#ffffff" fill-opacity=".05"><rect y="0" width="512" height="85"/><rect y="171" width="512" height="85"/><rect y="341" width="512" height="86"/></g>
+<g fill="none" stroke="#e8fff4" stroke-opacity=".35" stroke-width="8" stroke-linecap="round">
+<rect x="70" y="70" width="372" height="372" rx="10"/><line x1="70" y1="256" x2="442" y2="256"/><circle cx="256" cy="256" r="72"/>
+<rect x="160" y="70" width="192" height="62"/><rect x="160" y="380" width="192" height="62"/></g>
+<g transform="translate(256 258) skewX(-14) translate(-257 -258)">
+<g fill="#00ff9d" filter="url(#glow)" opacity=".8">
+<path d="M96 168 H262 L238 214 H146 V240 H232 L204 286 H146 V348 L96 348 Z"/>
+<path d="M276 348 V168 H322 L346 238 L372 168 H418 V348 H372 V258 L352 306 H342 L322 258 V348 Z"/></g>
+<g fill="url(#g)" stroke="#04140f" stroke-width="10" stroke-linejoin="miter" paint-order="stroke">
+<path d="M96 168 H262 L238 214 H146 V240 H232 L204 286 H146 V348 L96 348 Z"/>
+<path d="M276 348 V168 H322 L346 238 L372 168 H418 V348 H372 V258 L352 306 H342 L322 258 V348 Z"/></g>
+<path d="M300 130 L242 266 H282 L252 392 L338 236 H298 L346 130 Z" fill="#fffbe0" stroke="#04140f" stroke-width="8" stroke-linejoin="miter" paint-order="stroke"/>
+</g></svg>
