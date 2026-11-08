@@ -20,12 +20,18 @@ const SoundManager = {
   registry: {
     // Músicas tocadas aleatoriamente ao entrar ou criar pelada
     abertura: [
+      '/static/music/dancing-shower.mp3',
+      '/static/music/dj-chicken.mp3',
       '/static/music/fifa-world-cup-theme.mp3',
       '/static/music/galaxy-meme.mp3',
       '/static/music/indian-song.mp3',
+      '/static/music/jettism-goodbye.mp3',
       '/static/music/mentalista.mp3',
+      '/static/music/pega-o-pato.mp3',
+      '/static/music/ps2_start_up.mp3',
       '/static/music/run-vine-sound-effect.mp3',
-      '/static/music/spiderman-meme-song.mp3'
+      '/static/music/spiderman-meme-song.mp3',
+      '/static/music/vinheta-galvao-do-tetra.mp3'
     ],
     // Efeitos sonoros aleatórios para os botões e ações do sistema
     efeitos: [
@@ -240,8 +246,37 @@ const SoundManager = {
       this._currentMusic.play().catch(e => console.warn(e));
     }
     return this.settings.muted;
+  },
+
+  /**
+   * Sincroniza dinamicamente a lista de músicas e efeitos com os arquivos da pasta via backend
+   */
+  async loadDynamicCatalog() {
+    try {
+      const res = await fetch('/api/audio-catalog');
+      if (res.ok) {
+        const catalog = await res.json();
+        if (catalog.abertura && Array.isArray(catalog.abertura) && catalog.abertura.length > 0) {
+          this.registry.abertura = catalog.abertura;
+        }
+        if (catalog.efeitos && Array.isArray(catalog.efeitos) && catalog.efeitos.length > 0) {
+          this.registry.efeitos = catalog.efeitos;
+        }
+      }
+    } catch (e) {
+      console.warn('[SoundManager] Não foi possível carregar catálogo dinâmico de áudio do servidor, mantendo faixas locais:', e);
+    }
   }
 };
 
 // Disponibiliza globalmente
 window.SoundManager = SoundManager;
+
+// Inicializa catálogo dinâmico automaticamente ao carregar
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => SoundManager.loadDynamicCatalog());
+  } else {
+    SoundManager.loadDynamicCatalog();
+  }
+}

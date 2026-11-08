@@ -1,39 +1,83 @@
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 import os
 import random
 import string
-import hashlib
 import time
 
 from app.domain.models import Player, Team, Match, SessionConfig, PeladaSession
 from app.domain.matchmaker import MatchmakerService
+from app.domain.security import (
+    hash_password,
+    verify_password,
+    is_legacy_hash,
+    create_admin_token,
+    verify_admin_token,
+    rate_limiter
+)
 from app.adapters.sqlite_repo import SQLiteMatchRepository
 
 BRT = timezone(timedelta(hours=-3))
 
 app = FastAPI(title="FutMatch API", description="Organizador Moderno de Peladas e Campeonatos")
 
+# ==========================================
+# MIDDLEWARE: HEADERS DE SEGURANÇA HTTP
+# ==========================================
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    # Proteção de tamanho de payload para prevenir DoS (máximo 5MB por requisição)
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > 5 * 1024 * 1024:
+        return Response(content="Payload Too Large (máximo 5MB permitido)", status_code=413)
+
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    return response
+
 DATA_DIR = os.getenv("DATA_DIR", ".")
 os.makedirs(DATA_DIR, exist_ok=True)
 db_file = os.path.join(DATA_DIR, "futmatch.db")
 repo = SQLiteMatchRepository(db_file)
 
-# Rate limit de 15 segundos para "assumir administração" (por IP ou por pelada)
-# Estrutura: { f"{ip}:{code}": timestamp }
-LOGIN_ATTEMPTS: Dict[str, float] = {}
-
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.strip().encode("utf-8")).hexdigest()
+def get_client_ip(request: Request) -> str:
+    """Obtém o IP real do cliente mesmo atrás de proxy reverso."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 def generate_random_code(length: int = 5) -> str:
     # Código alfanumérico sem caracteres confusos (0/O, 1/I)
     chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return "".join(random.choice(chars) for _ in range(length))
+
+async def require_admin_permission(pelada_code: str, x_admin_token: Optional[str] = None) -> PeladaSession:
+    """
+    Verifica se a pelada existe e se o requisitante tem permissão de escrita.
+    Se a pelada tem senha configurada, exige um X-Admin-Token válido.
+    """
+    pelada = await repo.get_pelada(pelada_code)
+    if not pelada:
+        raise HTTPException(status_code=404, detail="Pelada não encontrada.")
+
+    # Se a pelada possui senha configurada, o token é obrigatório
+    if pelada.password_hash:
+        if not x_admin_token or not verify_admin_token(x_admin_token, pelada_code):
+            raise HTTPException(
+                status_code=403,
+                detail="Acesso não autorizado: Esta pelada possui senha mestra. Assuma a administração como líder para fazer alterações."
+            )
+
+    return pelada
 
 # Serve arquivos estáticos (CSS, JS, assets)
 os.makedirs("static", exist_ok=True)
@@ -43,60 +87,70 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def on_startup():
     await repo.init_db()
 
-# DTOs
+# DTOs com validação de limites de tamanho
 class CreatePeladaRequest(BaseModel):
-    name: Optional[str] = "Pelada dos Amigos"
-    password: Optional[str] = ""
+    name: Optional[str] = Field("Pelada dos Amigos", max_length=60)
+    password: Optional[str] = Field("", max_length=64)
 
 class SetPasswordRequest(BaseModel):
-    password: str
+    password: str = Field(..., min_length=3, max_length=64)
 
 class ClaimAdminRequest(BaseModel):
-    password: str
+    password: str = Field(..., max_length=64)
 
 class SetPoolRequest(BaseModel):
-    parent_code: Optional[str] = None
+    parent_code: Optional[str] = Field(None, max_length=10)
 
 class SyncPeladaStateRequest(BaseModel):
-    players: List[Dict[str, Any]] = []
-    teams: List[Dict[str, Any]] = []
-    fixtures: List[Dict[str, Any]] = []
+    players: List[Dict[str, Any]] = Field(default_factory=list, max_length=300)
+    teams: List[Dict[str, Any]] = Field(default_factory=list, max_length=50)
+    fixtures: List[Dict[str, Any]] = Field(default_factory=list, max_length=500)
     config: Optional[Dict[str, Any]] = None
 
 class BalanceTeamsRequest(BaseModel):
-    players: List[Dict[str, Any]]
-    players_per_team: int = 5
+    players: List[Dict[str, Any]] = Field(..., max_length=300)
+    players_per_team: int = Field(5, ge=2, le=20)
+    pelada_code: Optional[str] = Field(None, max_length=10)
 
 class GenerateScheduleRequest(BaseModel):
-    teams: List[Dict[str, Any]]
-    rounds: int = 1
+    teams: List[Dict[str, Any]] = Field(..., max_length=50)
+    rounds: int = Field(1, ge=1, le=10)
 
 class MatchSaveRequest(BaseModel):
-    id: str
-    round_number: int
-    home_team_id: str
-    home_team_name: str
-    away_team_id: str
-    away_team_name: str
-    home_score: int
-    away_score: int
-    home_players: List[Dict[str, Any]]
-    away_players: List[Dict[str, Any]]
-    events: List[Dict[str, Any]] = []
-    notes: Optional[str] = ""
+    id: str = Field(..., max_length=100)
+    round_number: int = Field(..., ge=1, le=100)
+    home_team_id: str = Field(..., max_length=50)
+    home_team_name: str = Field(..., max_length=60)
+    away_team_id: str = Field(..., max_length=50)
+    away_team_name: str = Field(..., max_length=60)
+    home_score: int = Field(0, ge=0, le=999)
+    away_score: int = Field(0, ge=0, le=999)
+    home_players: List[Dict[str, Any]] = Field(default_factory=list, max_length=50)
+    away_players: List[Dict[str, Any]] = Field(default_factory=list, max_length=50)
+    events: List[Dict[str, Any]] = Field(default_factory=list, max_length=200)
+    notes: Optional[str] = Field("", max_length=500)
 
 class ConfigDTO(BaseModel):
-    players_per_team: int = 5
-    match_duration_minutes: int = 10
-    total_rounds: int = 1
-    championship_type: Optional[str] = "single"
-    points_win: int = 3
-    points_draw: int = 1
+    players_per_team: int = Field(5, ge=2, le=20)
+    match_duration_minutes: int = Field(10, ge=1, le=120)
+    total_rounds: int = Field(1, ge=0, le=10)
+    championship_type: Optional[str] = Field("single", max_length=20)
+    points_win: int = Field(3, ge=1, le=10)
+    points_draw: int = Field(1, ge=0, le=5)
 
 # Rotas de Peladas (Multi-pelada)
 @app.post("/api/peladas/create")
-async def create_pelada(req: CreatePeladaRequest):
-    """Cria uma nova pelada com código único de 5 caracteres."""
+async def create_pelada(req: CreatePeladaRequest, request: Request):
+    """Cria uma nova pelada com código único de 5 caracteres e rate limit por IP."""
+    client_ip = get_client_ip(request)
+    # Rate limit: máximo 10 criações de pelada por minuto por IP
+    allowed, retry_after = rate_limiter.check_rate_limit(f"create:{client_ip}", max_requests=10, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Limite de criação de peladas atingido. Aguarde {retry_after} segundo(s)."
+        )
+
     for _ in range(10):
         code = generate_random_code(5)
         existing = await repo.get_pelada(code)
@@ -107,12 +161,15 @@ async def create_pelada(req: CreatePeladaRequest):
 
     pwd_hash = hash_password(req.password) if req.password else ""
     pelada = await repo.create_pelada(code=code, password_hash=pwd_hash, name=req.name or "Pelada dos Amigos")
+    admin_token = create_admin_token(code)
+
     return {
         "status": "ok",
         "code": pelada.code,
         "name": pelada.name,
         "created_at": pelada.created_at,
-        "has_password": bool(pwd_hash)
+        "has_password": bool(pwd_hash),
+        "admin_token": admin_token
     }
 
 @app.get("/api/peladas/{code}")
@@ -135,11 +192,9 @@ async def get_pelada_info(code: str):
     }
 
 @app.post("/api/peladas/{code}/pool")
-async def link_pelada_pool(code: str, req: SetPoolRequest):
-    """Vincula a pelada atual a uma pelada anterior na corrente (pool)."""
-    pelada = await repo.get_pelada(code)
-    if not pelada:
-        raise HTTPException(status_code=404, detail="Pelada atual não encontrada.")
+async def link_pelada_pool(code: str, req: SetPoolRequest, x_admin_token: Optional[str] = Header(None)):
+    """Vincula a pelada atual a uma pelada anterior na corrente (pool). Exige autorização se houver senha."""
+    pelada = await require_admin_permission(code, x_admin_token)
 
     parent = req.parent_code.strip().upper() if req.parent_code else None
 
@@ -164,38 +219,43 @@ async def link_pelada_pool(code: str, req: SetPoolRequest):
         "chain_codes": updated_chain
     }
 
-
 @app.post("/api/peladas/{code}/set-password")
-async def set_pelada_password(code: str, req: SetPasswordRequest):
+async def set_pelada_password(code: str, req: SetPasswordRequest, x_admin_token: Optional[str] = Header(None)):
     pelada = await repo.get_pelada(code)
     if not pelada:
         raise HTTPException(status_code=404, detail="Pelada não encontrada.")
     if not req.password or len(req.password.strip()) < 3:
         raise HTTPException(status_code=400, detail="A senha deve ter no mínimo 3 caracteres.")
 
-    # Se já tiver senha configurada, só pode atualizar se estiver definindo pela 1ª vez ou autenticado
+    # Se a pelada já tem senha, exige que o usuário já seja admin
+    if pelada.password_hash and not verify_admin_token(x_admin_token, code):
+        raise HTTPException(status_code=403, detail="Não autorizado: apenas o administrador atual pode alterar a senha mestra.")
+
+    # Gera hash seguro PBKDF2 com salt
     pwd_hash = hash_password(req.password)
     await repo.update_pelada_password(code, pwd_hash)
-    return {"status": "ok", "message": "Senha mestra da pelada definida com sucesso!"}
+
+    # Gera/renova token administrativo para o líder
+    admin_token = create_admin_token(code)
+    return {
+        "status": "ok",
+        "message": "Senha mestra da pelada definida com sucesso!",
+        "admin_token": admin_token
+    }
 
 @app.post("/api/peladas/{code}/claim-admin")
 async def claim_admin(code: str, req: ClaimAdminRequest, request: Request):
-    """Permite assumir administração da pelada digitando a senha, com rate limit de 15 segundos."""
-    client_ip = request.client.host if request.client else "unknown"
-    rate_key = f"{client_ip}:{code.upper()}"
-    now = time.time()
+    """Permite assumir administração da pelada digitando a senha, com rate limit por IP + código."""
+    client_ip = get_client_ip(request)
+    rate_key = f"claim:{client_ip}:{code.upper()}"
 
-    last_attempt = LOGIN_ATTEMPTS.get(rate_key)
-    if last_attempt:
-        elapsed = now - last_attempt
-        if elapsed < 15:
-            remaining = int(15 - elapsed) + 1
-            raise HTTPException(
-                status_code=429,
-                detail=f"Muitas tentativas. Aguarde {remaining} segundo(s) antes de tentar novamente."
-            )
-
-    LOGIN_ATTEMPTS[rate_key] = now
+    # Rate limit estrito: 1 tentativa a cada 15 segundos por IP e código de pelada
+    allowed, retry_after = rate_limiter.check_rate_limit(rate_key, max_requests=1, window_seconds=15)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Muitas tentativas. Aguarde {retry_after} segundo(s) antes de tentar novamente."
+        )
 
     pelada = await repo.get_pelada(code)
     if not pelada:
@@ -204,26 +264,62 @@ async def claim_admin(code: str, req: ClaimAdminRequest, request: Request):
     if not pelada.password_hash:
         raise HTTPException(status_code=400, detail="Esta pelada ainda não possui senha cadastrada.")
 
-    submitted_hash = hash_password(req.password)
-    if submitted_hash != pelada.password_hash:
+    if not verify_password(req.password, pelada.password_hash):
         raise HTTPException(status_code=401, detail="Senha incorreta para esta pelada.")
+
+    # Atualização transparente: se a pelada ainda usava hash legado SHA-256, atualiza para PBKDF2
+    if is_legacy_hash(pelada.password_hash):
+        upgraded_hash = hash_password(req.password)
+        await repo.update_pelada_password(code, upgraded_hash)
+
+    # Gera token de administrador forte e aleatório
+    token = create_admin_token(code)
 
     return {
         "status": "ok",
         "message": "Administração assumida com sucesso! Você agora é o líder desta pelada.",
-        "admin_token": submitted_hash
+        "admin_token": token
     }
 
 @app.post("/api/peladas/{code}/sync-state")
-async def sync_pelada_state(code: str, req: SyncPeladaStateRequest):
-    pelada = await repo.get_pelada(code)
-    if not pelada:
-        raise HTTPException(status_code=404, detail="Pelada não encontrada.")
+async def sync_pelada_state(code: str, req: SyncPeladaStateRequest, request: Request, x_admin_token: Optional[str] = Header(None)):
+    # Rate limit de sincronização por pelada (máximo 60 syncs por minuto para evitar spam no disco)
+    client_ip = get_client_ip(request)
+    allowed, retry_after = rate_limiter.check_rate_limit(f"sync:{code.upper()}:{client_ip}", max_requests=60, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Frequência de sincronização excedida. Aguarde {retry_after}s."
+        )
+
+    pelada = await require_admin_permission(code, x_admin_token)
     config = req.config or pelada.config or {}
     await repo.save_pelada_state(code, req.players, req.teams, req.fixtures, config)
     return {"status": "ok"}
 
 # Rotas Principais
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".webm"}
+
+def scan_audio_directory(subpath: str) -> List[str]:
+    """Escaneia o diretório de áudio em static/{subpath} e retorna os caminhos dos arquivos válidos."""
+    base_dir = os.path.join("static", subpath)
+    if not os.path.exists(base_dir):
+        return []
+    files = []
+    for entry in sorted(os.listdir(base_dir)):
+        ext = os.path.splitext(entry)[1].lower()
+        if ext in AUDIO_EXTENSIONS and not entry.startswith("."):
+            files.append(f"/static/{subpath}/{entry}")
+    return files
+
+@app.get("/api/audio-catalog")
+async def get_audio_catalog():
+    """Retorna dinamicamente todas as músicas e efeitos presentes no disco."""
+    return {
+        "abertura": scan_audio_directory("music"),
+        "efeitos": scan_audio_directory("sounds")
+    }
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
@@ -236,6 +332,10 @@ async def serve_home():
 async def serve_manifest():
     return FileResponse("static/manifest.json", media_type="application/manifest+json")
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def serve_favicon():
+    return FileResponse("static/favicon.ico", media_type="image/x-icon")
+
 @app.get("/sw.js")
 async def serve_service_worker():
     return FileResponse("static/sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/"})
@@ -246,14 +346,18 @@ async def get_config(pelada_code: Optional[str] = None):
     return cfg.__dict__
 
 @app.post("/api/config")
-async def update_config(req: ConfigDTO, pelada_code: Optional[str] = None):
+async def update_config(req: ConfigDTO, pelada_code: Optional[str] = None, x_admin_token: Optional[str] = Header(None)):
+    if pelada_code:
+        await require_admin_permission(pelada_code, x_admin_token)
     cfg = SessionConfig(**req.dict())
     await repo.save_config(cfg, pelada_code)
     return {"status": "ok", "config": cfg.__dict__}
 
 @app.post("/api/balance-teams")
-async def balance_teams(req: BalanceTeamsRequest):
+async def balance_teams(req: BalanceTeamsRequest, x_admin_token: Optional[str] = Header(None)):
     """Equilibra times a partir da lista de jogadores recebida."""
+    if req.pelada_code:
+        await require_admin_permission(req.pelada_code, x_admin_token)
     players = [
         Player(
             id=str(p.get("id") or i),
@@ -308,8 +412,11 @@ async def generate_schedule(req: GenerateScheduleRequest):
     ]
 
 @app.post("/api/matches/save")
-async def save_match_result(req: MatchSaveRequest, pelada_code: Optional[str] = None):
-    """Salva o resultado final de uma partida com data e hora de Brasília e histórico detalhado."""
+async def save_match_result(req: MatchSaveRequest, pelada_code: Optional[str] = None, x_admin_token: Optional[str] = Header(None)):
+    """Salva o resultado final de uma partida com validação de permissão de admin."""
+    if pelada_code:
+        await require_admin_permission(pelada_code, x_admin_token)
+
     played_at = datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S")
     winner_id = None
     is_draw = req.home_score == req.away_score
@@ -345,13 +452,17 @@ async def list_matches(pelada_code: Optional[str] = None):
     return [repo._match_to_dict(m) for m in matches]
 
 @app.delete("/api/matches")
-async def clear_all_matches(pelada_code: Optional[str] = None):
+async def clear_all_matches(pelada_code: Optional[str] = None, x_admin_token: Optional[str] = Header(None)):
+    if pelada_code:
+        await require_admin_permission(pelada_code, x_admin_token)
     await repo.delete_all_matches(pelada_code=pelada_code)
     return {"status": "ok", "message": "Histórico limpo com sucesso."}
 
 @app.delete("/api/matches/{match_id}")
-async def delete_single_match(match_id: str, pelada_code: Optional[str] = None):
+async def delete_single_match(match_id: str, pelada_code: Optional[str] = None, x_admin_token: Optional[str] = Header(None)):
     """Exclui uma partida finalizada do banco SQLite para permitir reedição ou correção."""
+    if pelada_code:
+        await require_admin_permission(pelada_code, x_admin_token)
     success = await repo.delete_match(match_id, pelada_code=pelada_code)
     if not success:
         raise HTTPException(status_code=404, detail="Partida não encontrada.")
@@ -361,4 +472,3 @@ async def delete_single_match(match_id: str, pelada_code: Optional[str] = None):
 async def get_dashboard(pelada_code: Optional[str] = None):
     metrics = await repo.get_dashboard_metrics(pelada_code=pelada_code)
     return metrics
-
