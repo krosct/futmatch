@@ -18,7 +18,10 @@ BRT = timezone(timedelta(hours=-3))
 
 app = FastAPI(title="FutMatch API", description="Organizador Moderno de Peladas e Campeonatos")
 
-repo = SQLiteMatchRepository("futmatch.db")
+DATA_DIR = os.getenv("DATA_DIR", ".")
+os.makedirs(DATA_DIR, exist_ok=True)
+db_file = os.path.join(DATA_DIR, "futmatch.db")
+repo = SQLiteMatchRepository(db_file)
 
 # Rate limit de 15 segundos para "assumir administração" (por IP ou por pelada)
 # Estrutura: { f"{ip}:{code}": timestamp }
@@ -221,6 +224,10 @@ async def sync_pelada_state(code: str, req: SyncPeladaStateRequest):
     return {"status": "ok"}
 
 # Rotas Principais
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_home():
     return FileResponse("static/index.html")

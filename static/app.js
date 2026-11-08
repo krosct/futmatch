@@ -73,7 +73,7 @@ function updateRoleUI() {
 
   if (settingsIndicator) {
     if (isLeader) {
-      settingsIndicator.textContent = 'Líder / Administrador';
+      settingsIndicator.textContent = 'Administrador';
       settingsIndicator.className = 'text-xs font-bold px-3 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
     } else {
       settingsIndicator.textContent = 'Modo Espectador';
