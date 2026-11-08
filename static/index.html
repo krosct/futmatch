@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FutMatch ⚽ — Organizador Inteligente de Futebol</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚽</text></svg>">
+
+  <!-- PWA & Mobile Meta Tags -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#080c14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FutMatch">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Canvas Confetti CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Google Fonts: Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            pitch: '#080c14',
+            surface: '#111827',
+            card: '#162032',
+            cardLight: '#1e293b',
+            borderLight: '#26354a',
+            neon: {
+              green: '#10b981',
+              emerald: '#059669',
+              accent: '#00f59b',
+              glow: '#10b98133',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b0f19; }
+    ::-webkit-scrollbar-thumb { background: #223046; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #10b981; }
+
+    .glow-neon {
+      box-shadow: 0 0 25px rgba(0, 245, 155, 0.25);
+    }
+    .badge-gk {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+
+    /* Container de abas com deslocamento contínuo (estilo carrossel/slide com respiro elegante) */
+    :root {
+      --tab-gap: 48px;
+    }
+
+    #tab-viewport {
+      width: 100%;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    #tabs-slider {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--tab-gap);
+      width: calc(400% + (3 * var(--tab-gap)));
+      transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: transform;
+    }
+
+    .tab-slide-pane {
+      /* Cada painel ocupa exatamente a largura total visível do container viewport */
+      width: calc((100% - (3 * var(--tab-gap))) / 4);
+      flex-shrink: 0;
+      min-width: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    /* Painéis inativos em repouso não acumulam altura fantasma nem focam */
+    .tab-slide-pane.tab-inactive {
+      height: 0;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+
+    /* Menu inferior mobile 100% fixo com isolamento de camada e área segura */
+    #mobile-bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      transform: translateZ(0);
+      -webkit-transform: translateZ(0);
+      padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #tabs-slider {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-pitch text-slate-100 min-h-screen flex flex-col font-sans selection:bg-neon-accent selection:text-black antialiased">
+
+  <!-- ========================================== -->
+  <!-- TELA INICIAL / LANDING: SELEÇÃO DE PELADA -->
+  <!-- ========================================== -->
+  <div id="landing-screen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-pitch overflow-y-auto">
+    <!-- Imagem de fundo empolgante com overlay escuro -->
+    <div class="absolute inset-0 z-0">
+      <img src="https://images.unsplash.com/photo-1522778119026-d647f0596c20?auto=format&fit=crop&w=2000&q=80" 
+           alt="Estádio e Gramado de Futebol" 
+           class="w-full h-full object-cover object-center filter brightness-50 contrast-125 saturate-120">
+      <div class="absolute inset-0 bg-gradient-to-t from-pitch via-pitch/80 to-pitch/60"></div>
+      <div class="absolute inset-0 bg-radial-at-c from-transparent via-pitch/50 to-pitch"></div>
+    </div>
+
+    <!-- Conteúdo Central da Tela Inicial -->
+    <div class="relative z-10 max-w-xl w-full my-auto space-y-8 text-center animate-in fade-in zoom-in-95 duration-300">
+      
+      <!-- Brand & Header -->
+      <div class="space-y-3">
+        <div class="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-tr from-emerald-600 to-neon-accent text-black font-black text-4xl shadow-2xl shadow-emerald-500/30 transform hover:rotate-6 transition">
+          ⚽
+        </div>
+        <h1 class="text-4xl sm:text-5xl font-black tracking-tight text-white">
+          Fut<span class="text-neon-accent drop-shadow-[0_0_20px_rgba(0,245,155,0.4)]">Match</span>
+        </h1>
+        <p class="text-base sm:text-lg text-slate-300 font-medium max-w-md mx-auto">
+          Organizador de peladas em tempo real. Sorteio balanceado, tabela automática e placares ao vivo.
+        </p>
+      </div>
+
+      <!-- Card Principal: Criar ou Entrar -->
+      <div class="bg-surface/90 backdrop-blur-xl border border-borderLight/80 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-left">
+        
+        <!-- Bloco 1: Criar Nova Pelada -->
+        <div class="p-5 rounded-2xl bg-card/80 border border-borderLight hover:border-emerald-500/40 transition group">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="w-10 h-10 rounded-xl bg-neon-accent/10 border border-neon-accent/30 flex items-center justify-center text-neon-accent">
+              <i data-lucide="plus-circle" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-white group-hover:text-neon-accent transition">Criar Nova Pelada</h2>
+              <p class="text-xs text-slate-400">Gera um código exclusivo de 5 caracteres. Você será o Líder.</p>
+            </div>
+          </div>
+
+          <div class="mt-4 flex flex-col sm:flex-row gap-2.5">
+            <input type="text" id="input-new-pelada-name" placeholder="Nome da Pelada (ex: Racha dos Amigos)" maxlength="40" class="flex-1 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
+            <button onclick="criarNovaPelada()" id="btn-create-pelada" class="glow-neon px-5 py-2.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+              <span>Criar Pelada</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Divisor com Texto "OU" -->
+        <div class="relative flex items-center justify-center">
+          <div class="border-t border-borderLight w-full"></div>
+          <span class="bg-surface px-4 text-xs font-bold uppercase tracking-wider text-slate-500 absolute">OU</span>
+        </div>
+
+        <!-- Bloco 2: Entrar com Código Existente -->
+        <div class="p-5 rounded-2xl bg-card/80 border border-borderLight hover:border-blue-500/40 transition group">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
+              <i data-lucide="log-in" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-white group-hover:text-blue-400 transition">Entrar em uma Pelada</h2>
+              <p class="text-xs text-slate-400">Digite o código de 5 caracteres compartilhado com você.</p>
+            </div>
+          </div>
+
+          <div class="mt-4 flex flex-col sm:flex-row gap-2.5">
+            <input type="text" id="input-join-code" placeholder="Código (ex: A8F2K)" maxlength="5" uppercase class="uppercase tracking-widest text-center font-mono font-bold bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-400">
+            <button onclick="entrarNaPelada()" id="btn-join-pelada" class="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap shadow-lg shadow-blue-500/20">
+              <i data-lucide="arrow-right" class="w-4 h-4"></i>
+              <span>Entrar como Espectador</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Rodapé / Informação adicional -->
+      <div class="flex items-center justify-center gap-4 text-xs text-slate-400">
+        <span class="flex items-center gap-1.5"><i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i> Proteção por Senha</span>
+        <span>•</span>
+        <span class="flex items-center gap-1.5"><i data-lucide="users" class="w-4 h-4 text-blue-400"></i> Multi-sessão Isolada</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Top App Navigation -->
+  <header class="border-b border-borderLight/70 bg-surface/95 backdrop-blur-md sticky top-0 z-40 transition-all">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3 min-h-16">
+      
+      <!-- Logo, Branding & Status da Pelada -->
+      <div class="flex items-center space-x-3 cursor-pointer select-none flex-shrink-0" onclick="switchTab('matchmaker')">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-neon-accent flex items-center justify-center text-black font-black text-xl shadow-lg shadow-emerald-900/40">
+          ⚽
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-xl font-black tracking-tight text-white leading-none">Fut<span class="text-neon-accent">Match</span></h1>
+            <span class="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 leading-none">PRO</span>
+          </div>
+          <div class="flex items-center gap-1.5 mt-1">
+            <span id="current-pelada-code-display" class="inline-flex items-center justify-center h-5 font-mono text-[10px] font-bold text-neon-accent bg-emerald-950/70 border border-emerald-500/30 px-2 rounded-md cursor-pointer select-none hover:bg-emerald-900/80 transition leading-none" onclick="copiarCodigoPelada()" title="Clique para copiar código">#-----</span>
+            <span id="role-badge" class="inline-flex items-center justify-center h-5 text-[10px] font-bold px-2 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 gap-1 leading-none">
+              <i data-lucide="eye" class="w-2.5 h-2.5"></i>
+              <span>Espectador</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Navigation Tabs -->
+      <nav class="hidden md:flex items-center space-x-1 bg-pitch/80 p-1 rounded-xl border border-borderLight flex-shrink-0">
+        <button onclick="switchTab('matchmaker')" id="tab-btn-matchmaker" class="nav-tab active flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-black bg-neon-accent shadow-sm">
+          <i data-lucide="users" class="w-3.5 h-3.5"></i>
+          <span>Jogadores & Times</span>
+        </button>
+        <button onclick="switchTab('fixtures')" id="tab-btn-fixtures" class="nav-tab flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white hover:bg-cardLight">
+          <i data-lucide="trophy" class="w-3.5 h-3.5"></i>
+          <span>Jogos da Rodada</span>
+          <span id="badge-pending-matches" class="hidden text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold">0</span>
+        </button>
+        <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="nav-tab flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white hover:bg-cardLight">
+          <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>
+          <span>Dashboard & Histórico</span>
+        </button>
+        <button onclick="switchTab('settings')" id="tab-btn-settings" class="nav-tab flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white hover:bg-cardLight">
+          <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
+          <span>Configurações</span>
+        </button>
+      </nav>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center space-x-2 flex-shrink-0 ml-auto md:ml-0">
+        <button onclick="copiarLinkPelada()" title="Copiar link da pelada para compartilhar" class="flex items-center space-x-1 px-2.5 py-1.5 bg-card border border-borderLight hover:border-neon-accent/50 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition">
+          <i data-lucide="share-2" class="w-3.5 h-3.5 text-neon-accent"></i>
+          <span class="hidden sm:inline">Compartilhar</span>
+        </button>
+        <button onclick="sairPelada()" title="Trocar de Pelada / Voltar ao Início" class="flex items-center space-x-1 px-2.5 py-1.5 bg-card border border-borderLight hover:border-rose-500/50 text-slate-300 hover:text-rose-400 rounded-lg text-xs font-semibold transition">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Sair</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mobile Tab Bar (Bottom Navigation) -->
+  <nav id="mobile-bottom-nav" class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/95 backdrop-blur-md border-t border-borderLight px-2 py-1.5 flex items-center justify-around shadow-2xl safe-area-bottom">
+    <button onclick="switchTab('matchmaker')" id="tab-btn-mobile-matchmaker" class="p-2 text-xs flex flex-col items-center text-neon-accent font-medium transition-colors">
+      <i data-lucide="users" class="w-5 h-5 mb-1"></i>
+      <span>Times</span>
+    </button>
+    <button onclick="switchTab('fixtures')" id="tab-btn-mobile-fixtures" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors relative">
+      <i data-lucide="trophy" class="w-5 h-5 mb-1"></i>
+      <span>Jogos</span>
+      <span id="badge-pending-matches-mobile" class="hidden absolute top-1 right-2 text-[9px] bg-emerald-500/20 text-emerald-300 px-1 rounded-full font-bold">0</span>
+    </button>
+    <button onclick="switchTab('dashboard')" id="tab-btn-mobile-dashboard" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors">
+      <i data-lucide="bar-chart-3" class="w-5 h-5 mb-1"></i>
+      <span>Métricas</span>
+    </button>
+    <button onclick="switchTab('settings')" id="tab-btn-mobile-settings" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors">
+      <i data-lucide="sliders" class="w-5 h-5 mb-1"></i>
+      <span>Ajustes</span>
+    </button>
+  </nav>
+
+  <!-- Main View Container com Viewport e Slider de Deslocamento das Abas -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-8 overflow-hidden">
+
+    <div id="tab-viewport">
+      <div id="tabs-slider">
+
+        <!-- ========================================== -->
+        <!-- TAB 1: JOGADORES, SORTEIO E MONTAGEM TIMES -->
+        <!-- ========================================== -->
+        <div class="tab-slide-pane">
+          <section id="section-matchmaker" class="space-y-6">
+      
+      <!-- Top banner intro -->
+      <div class="bg-gradient-to-r from-card to-surface p-6 rounded-3xl border border-borderLight flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+        <div class="space-y-1 text-center md:text-left">
+          <h2 class="text-2xl font-bold text-white flex items-center justify-center md:justify-start gap-2">
+            <span>Montagem Dinâmica de Pelada</span>
+          </h2>
+          <p class="text-sm text-slate-400 max-w-xl">
+            O sistema distribui goleiros, equilibra os níveis de estrelas e já gera a tabela de confrontos sem esforço!
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <button onclick="sortearTimes()" class="admin-only glow-neon flex items-center space-x-2 px-6 py-3.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold rounded-2xl transition shadow-lg text-sm active:scale-95">
+            <i data-lucide="dices" class="w-5 h-5"></i>
+            <span>Equilibrar Times & Sorteio</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Grid: Lista de Jogadores & Times Gerados -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Painel de Inserção Rápida de Jogadores (5 Colunas) -->
+        <div class="lg:col-span-5 bg-surface border border-borderLight rounded-3xl p-6 space-y-5">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <i data-lucide="user-plus" class="w-5 h-5 text-neon-accent"></i>
+                <span>Lista de Jogadores</span>
+              </h3>
+              <p class="text-xs text-slate-400">Total: <span id="count-players" class="text-neon-accent font-bold">0</span> confirmados</p>
+            </div>
+            
+            <button onclick="clearPlayers()" class="admin-only text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 transition">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              <span>Limpar</span>
+            </button>
+          </div>
+
+          <!-- Input Rápido -->
+          <div class="space-y-3 admin-only">
+            <div class="flex gap-2">
+              <input id="input-player-name" type="text" placeholder="Nome do jogador..." 
+                onkeydown="if(event.key==='Enter') addSinglePlayer()"
+                class="flex-1 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent focus:ring-1 focus:ring-neon-accent transition placeholder:text-slate-500">
+              <button onclick="addSinglePlayer()" class="px-4 py-2.5 bg-cardLight hover:bg-neon-accent hover:text-black font-semibold rounded-xl text-sm transition">
+                + Adicionar
+              </button>
+            </div>
+
+            <!-- Opções rápidas do novo jogador -->
+            <div class="flex items-center justify-between text-xs text-slate-400 bg-card/60 p-2.5 rounded-xl border border-borderLight/60">
+              <label class="flex items-center space-x-2 cursor-pointer">
+                <input id="check-is-gk" type="checkbox" class="accent-emerald-500 w-4 h-4 rounded">
+                <span>🧤 É Goleiro?</span>
+              </label>
+
+              <div class="flex items-center space-x-1">
+                <span>Nível:</span>
+                <select id="select-level" class="bg-cardLight text-white rounded-lg px-2 py-1 text-xs border border-borderLight focus:outline-none">
+                  <option value="5">⭐⭐⭐⭐⭐ Craque</option>
+                  <option value="4">⭐⭐⭐⭐ Bom</option>
+                  <option value="3" selected>⭐⭐⭐ Regular</option>
+                  <option value="2">⭐⭐ Esforçado</option>
+                  <option value="1">⭐ Perna de Pau</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Importação em massa por texto (WhatsApp / Lista rápida) -->
+            <details class="group bg-card/40 rounded-xl border border-borderLight/50 p-3 text-xs">
+              <summary class="font-semibold text-slate-300 cursor-pointer flex items-center justify-between">
+                <span class="flex items-center gap-1.5">
+                  <i data-lucide="clipboard-paste" class="w-4 h-4 text-emerald-400"></i>
+                  Colar lista do WhatsApp (Em massa)
+                </span>
+                <i data-lucide="chevron-down" class="w-4 h-4 group-open:rotate-180 transition"></i>
+              </summary>
+              <div class="mt-3 space-y-2">
+                <textarea id="bulk-players-text" rows="4" placeholder="Cole os nomes, um por linha. Ex:&#10;1. Lucas (G) 4&#10;2. Marcelo 5&#10;3. Pedrinho 3&#10;4. Matheus Felipe (G) 2..." class="w-full bg-pitch border border-borderLight rounded-xl p-3 text-xs text-white focus:outline-none focus:border-neon-accent font-mono"></textarea>
+                <button onclick="importBulkPlayers()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold transition">
+                  Carregar Nomes da Lista
+                </button>
+              </div>
+            </details>
+          </div>
+
+          <!-- Lista rolante de jogadores cadastrados -->
+          <div class="space-y-2 max-h-[360px] overflow-y-auto pr-1" id="players-list-container">
+            <!-- Inserido dinamicamente via JS -->
+            <div class="text-center py-8 text-slate-500 text-sm">Nenhum jogador na lista ainda.<br>Adicione jogadores acima!</div>
+          </div>
+        </div>
+
+        <!-- Times Montados e Prontos (7 Colunas) -->
+        <div class="lg:col-span-7 space-y-5">
+          <div class="bg-surface border border-borderLight rounded-3xl p-6 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-borderLight pb-4">
+              <div>
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                  <i data-lucide="shield" class="w-5 h-5 text-neon-accent"></i>
+                  <span>Times Montados</span>
+                </h3>
+                <p class="text-xs text-slate-400">Distribuição com equilíbrio por nível e posições</p>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button onclick="gerarTabelaConfrontos()" id="btn-generate-matches" class="hidden flex items-center gap-1.5 px-4 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition shadow">
+                  <i data-lucide="calendar" class="w-4 h-4"></i>
+                  <span>Gerar Confrontos Agora</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Grade de Times -->
+            <div id="teams-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="md:col-span-2 text-center py-16 border-2 border-dashed border-borderLight rounded-2xl text-slate-500 space-y-3">
+                <i data-lucide="users-2" class="w-12 h-12 mx-auto stroke-1 text-slate-600"></i>
+                <p class="text-sm">Clique em <strong class="text-neon-accent">"Equilibrar Times & Sorteio"</strong> para dividir os jogadores automaticamente entre os coletes!</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+
+        </div>
+        <!-- FIM TAB 1 -->
+
+
+        <!-- ========================================== -->
+        <!-- TAB 2: TABELA DE CONFRONTOS & PLACAR AO VIVO -->
+        <!-- ========================================== -->
+        <div class="tab-slide-pane">
+          <section id="section-fixtures" class="space-y-6">
+      
+      <div class="bg-surface border border-borderLight p-6 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4">
+        <div>
+          <h2 class="text-2xl font-black text-white flex items-center gap-2">
+            <span>Rodadas e Confrontos</span>
+            <span id="label-active-round" class="text-xs bg-neon-accent/20 text-neon-accent px-3 py-1 rounded-full border border-neon-accent/30 font-bold">Ao Vivo</span>
+          </h2>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <button id="btn-add-custom-match" onclick="abrirModalNovaPartida()" class="admin-only px-4 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow">
+            <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+            <span>Nova Partida</span>
+          </button>
+          <button onclick="gerarTabelaConfrontos()" class="admin-only px-4 py-2 bg-card hover:bg-cardLight border border-borderLight text-xs font-semibold rounded-xl text-slate-300 transition flex items-center gap-1.5">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+            <span id="btn-fixtures-action-label">Recriar Tabela</span>
+          </button>
+          <button id="btn-clear-fixtures" onclick="limparTodasRodadas()" class="admin-only px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold rounded-xl transition flex items-center gap-1.5" title="Remover todas as rodadas e confrontos">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span>Limpar Rodadas</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista de Partidas -->
+      <div id="fixtures-container" class="space-y-4">
+        <!-- Renderizado dinamicamente -->
+      </div>
+    </section>
+
+
+        </div>
+        <!-- FIM TAB 2 -->
+
+
+        <!-- ========================================== -->
+        <!-- TAB 3: DASHBOARD DE ESTATÍSTICAS E HISTÓRICO -->
+        <!-- ========================================== -->
+        <div class="tab-slide-pane">
+          <section id="section-dashboard" class="space-y-8">
+      
+      <!-- Banner Informativo da Pool no Dashboard -->
+      <div id="dashboard-pool-banner" class="hidden p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-card to-surface border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 flex-shrink-0">
+            <i data-lucide="link-2" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h4 class="text-sm font-bold text-white flex items-center gap-2">
+              <span>Pool Unificada de Peladas</span>
+              <span id="dashboard-pool-count" class="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">2 Peladas</span>
+            </h4>
+            <p class="text-xs text-slate-400">As estatísticas, artilharia e confrontos abaixo somam todas as peladas encadeadas na pool.</p>
+          </div>
+        </div>
+        <div id="dashboard-pool-chips" class="flex flex-wrap items-center gap-1.5 font-mono text-xs font-bold">
+          <!-- Chips gerados dinamicamente -->
+        </div>
+      </div>
+
+      <!-- KPIs Cards -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-surface border border-borderLight p-5 rounded-2xl space-y-2 relative overflow-hidden">
+          <div class="text-slate-400 text-xs font-medium flex items-center justify-between">
+            <span>Partidas Jogadas</span>
+            <i data-lucide="flag" class="w-4 h-4 text-emerald-400"></i>
+          </div>
+          <div id="kpi-matches" class="text-3xl font-black text-white">0</div>
+        </div>
+
+        <div class="bg-surface border border-borderLight p-5 rounded-2xl space-y-2 relative overflow-hidden">
+          <div class="text-slate-400 text-xs font-medium flex items-center justify-between">
+            <span>Total de Gols</span>
+            <i data-lucide="goal" class="w-4 h-4 text-neon-accent"></i>
+          </div>
+          <div id="kpi-goals" class="text-3xl font-black text-white">0</div>
+          <div class="text-[11px] text-slate-400">
+            Média: <strong id="kpi-avg-goals" class="text-neon-accent">0.0</strong> por partida
+          </div>
+        </div>
+
+        <div class="bg-surface border border-borderLight p-5 rounded-2xl space-y-2 relative overflow-hidden">
+          <div class="text-slate-400 text-xs font-medium flex items-center justify-between">
+            <span>Artilheiro Máximo</span>
+            <i data-lucide="award" class="w-4 h-4 text-amber-400"></i>
+          </div>
+          <div id="kpi-top-scorer" class="text-xl font-black text-white truncate">-</div>
+          <div class="text-[11px] text-amber-400 font-semibold" id="kpi-top-scorer-goals">
+            0 gols
+          </div>
+        </div>
+
+        <div class="bg-surface border border-borderLight p-5 rounded-2xl space-y-2 relative overflow-hidden">
+          <div class="text-slate-400 text-xs font-medium flex items-center justify-between">
+            <span>Maior Vencedor</span>
+            <i data-lucide="crown" class="w-4 h-4 text-yellow-400"></i>
+          </div>
+          <div id="kpi-top-winner" class="text-xl font-black text-white truncate">-</div>
+          <div class="text-[11px] text-yellow-400 font-semibold" id="kpi-top-winner-rate">
+            0 vitórias (0%)
+          </div>
+        </div>
+      </div>
+
+      <!-- Gráficos e Tabelas de Classificação -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Tabela de Classificação dos Times (7 Cols) -->
+        <div class="lg:col-span-7 bg-surface border border-borderLight rounded-3xl p-6 space-y-4">
+          <div class="flex items-center justify-between border-b border-borderLight pb-3">
+            <div>
+              <h3 class="text-base font-bold text-white flex items-center gap-2">
+                <i data-lucide="list-ordered" class="w-4 h-4 text-neon-accent"></i>
+                <span>Tabela Geral de Classificação</span>
+              </h3>
+              <p class="text-xs text-slate-400">Pontuação de times baseada nas partidas finalizadas</p>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="text-slate-400 border-b border-borderLight pb-2">
+                  <th class="py-2.5 font-bold"># Time</th>
+                  <th class="py-2.5 text-center font-bold">J</th>
+                  <th class="py-2.5 text-center font-bold">V</th>
+                  <th class="py-2.5 text-center font-bold">E</th>
+                  <th class="py-2.5 text-center font-bold">D</th>
+                  <th class="py-2.5 text-center font-bold">GP</th>
+                  <th class="py-2.5 text-center font-bold">GC</th>
+                  <th class="py-2.5 text-center font-bold">SG</th>
+                  <th class="py-2.5 text-right font-bold text-neon-accent">PTS</th>
+                </tr>
+              </thead>
+              <tbody id="table-leaderboard-body" class="divide-y divide-borderLight/40">
+                <tr><td colspan="9" class="py-6 text-center text-slate-500">Nenhuma partida finalizada no histórico.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Ranking Individual de Artilheiros e Vitórias (5 Cols) -->
+        <div class="lg:col-span-5 bg-surface border border-borderLight rounded-3xl p-6 space-y-5">
+          <div class="flex items-center justify-between border-b border-borderLight pb-3">
+            <div>
+              <h3 class="text-base font-bold text-white flex items-center gap-2">
+                <i data-lucide="flame" class="w-4 h-4 text-amber-400"></i>
+                <span>Destaques Individuais</span>
+              </h3>
+              <p class="text-xs text-slate-400">Quem mais balançou as redes e quem mais venceu</p>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">⚽ Top Goleadores</h4>
+              <div id="list-scorers" class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <p class="text-xs text-slate-500 py-2">Sem gols cadastrados ainda.</p>
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-borderLight/50">
+              <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">🏆 Mais Vitoriosos (Taxa de Vitória)</h4>
+              <div id="list-winners" class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <p class="text-xs text-slate-500 py-2">Sem jogos finalizados.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Histórico Completo de Partidas Gravadas -->
+      <div class="bg-surface border border-borderLight rounded-3xl p-6 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-borderLight pb-4">
+          <div>
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="history" class="w-5 h-5 text-neon-accent"></i>
+              <span>Histórico Completo de Partidas Salvas</span>
+            </h3>
+          </div>
+
+          <button onclick="limparHistorico()" class="admin-only text-xs px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition flex items-center gap-1 font-semibold">
+            <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+            <span>Limpar histórico</span>
+          </button>
+        </div>
+
+        <div id="history-matches-list" class="space-y-3">
+          <p class="text-sm text-slate-500 text-center py-8">Carregando histórico do banco de dados...</p>
+        </div>
+      </div>
+
+    </section>
+
+
+        </div>
+        <!-- FIM TAB 3 -->
+
+
+        <!-- ========================================== -->
+        <!-- TAB 4: CONFIGURAÇÕES DA SESSÃO/PELADA       -->
+        <!-- ========================================== -->
+        <div class="tab-slide-pane">
+          <section id="section-settings" class="space-y-6">
+      <div class="max-w-2xl mx-auto space-y-6">
+        
+        <!-- Bloco de Acesso / Administração da Pelada -->
+        <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
+          <div class="border-b border-borderLight pb-4 flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <i data-lucide="shield" class="w-5 h-5 text-neon-accent"></i>
+                <span>Administração da Pelada</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-1">Gerencie a liderança ou recupere os privilégios de edição.</p>
+            </div>
+            <span id="settings-role-indicator" class="text-xs font-bold px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              Espectador
+            </span>
+          </div>
+
+          <div id="box-claim-admin" class="p-5 rounded-2xl bg-card border border-borderLight space-y-3">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-xl bg-neon-accent/10 border border-neon-accent/30 flex items-center justify-center text-neon-accent flex-shrink-0">
+                <i data-lucide="key" class="w-5 h-5"></i>
+              </div>
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-white">Assumir Administração</h4>
+                <p class="text-xs text-slate-400">Digite a senha mestra configurada para esta pelada para liberar a edição completa.</p>
+              </div>
+            </div>
+
+            <form onsubmit="executarAssumirAdmin(event)" class="pt-2 flex flex-col sm:flex-row gap-2.5">
+              <input type="password" id="input-claim-password" placeholder="Digite a senha mestra" required class="flex-1 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
+              <button type="submit" id="btn-claim-admin" class="glow-neon px-5 py-2.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i data-lucide="unlock" class="w-4 h-4"></i>
+                <span id="btn-claim-admin-text">Assumir Admin</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Informações de Compartilhamento da Pelada -->
+          <div class="p-4 rounded-2xl bg-card/50 border border-borderLight flex items-center justify-between gap-4">
+            <div>
+              <p class="text-xs font-semibold text-slate-300">Código da Pelada:</p>
+              <p id="settings-pelada-code" class="text-lg font-black font-mono text-neon-accent tracking-widest mt-0.5">#-----</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="copiarCodigoPelada()" class="px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-slate-300 rounded-xl transition font-medium flex items-center gap-1.5">
+                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                <span>Copiar Código</span>
+              </button>
+              <button onclick="copiarLinkPelada()" class="px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-neon-accent rounded-xl transition font-medium flex items-center gap-1.5">
+                <i data-lucide="link" class="w-3.5 h-3.5"></i>
+                <span>Copiar Link</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Pool de Peladas: Encadeamento e Histórico Contínuo -->
+          <div class="p-5 rounded-2xl bg-card border border-borderLight space-y-4">
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 flex-shrink-0">
+                <i data-lucide="link-2" class="w-5 h-5"></i>
+              </div>
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Pool de Peladas (Histórico em Corrente)</span>
+                  <span id="badge-pool-status" class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">1 Pelada</span>
+                </h4>
+                <p class="text-xs text-slate-400 leading-relaxed">
+                  Conecte esta pelada a uma pelada anterior. O dashboard, artilharia e histórico irão se somar automaticamente em corrente ao longo do tempo.
+                </p>
+              </div>
+            </div>
+
+            <!-- Exibição da Corrente Atual -->
+            <div id="pool-chain-container" class="hidden p-3 rounded-xl bg-surface border border-borderLight/60 text-xs text-slate-300 space-y-1.5">
+              <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+                <span>Corrente ativa de histórico:</span>
+                <button onclick="desvincularPool()" class="admin-only text-rose-400 hover:text-rose-300 hover:underline">Desvincular</button>
+              </div>
+              <div id="pool-chain-badges" class="flex flex-wrap items-center gap-1.5 font-mono text-xs font-bold">
+                <!-- Badges gerados via JS -->
+              </div>
+            </div>
+
+            <!-- Formulário para Conectar a Pelada Anterior -->
+            <form onsubmit="salvarPoolPeladas(event)" class="pt-1 flex flex-col sm:flex-row gap-2.5 admin-only">
+              <input type="text" id="input-parent-pelada-code" placeholder="Código da pelada anterior (ex: A8F2K)" maxlength="5" uppercase class="uppercase tracking-widest text-center sm:text-left font-mono font-bold flex-1 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400">
+              <button type="submit" id="btn-save-pool" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 shadow">
+                <i data-lucide="link" class="w-4 h-4"></i>
+                <span>Vincular à Pool</span>
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Parâmetros da Pelada -->
+        <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div class="border-b border-borderLight pb-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+              <i data-lucide="sliders" class="w-5 h-5 text-neon-accent"></i>
+              <span>Regras e Parâmetros</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Ajuste os parâmetros padrão para o sorteio e cálculo das partidas.</p>
+          </div>
+
+          <form id="form-config" onsubmit="salvarConfiguracoes(event)" class="space-y-4">
+            
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Jogadores por Time na Linha / Total</label>
+              <input type="number" id="cfg-players-per-team" min="2" max="11" value="5" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Duração da Partida (minutos)</label>
+              <input type="number" id="cfg-duration" min="5" max="90" value="10" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Formato do Campeonato</label>
+              <select id="cfg-rounds" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+                <option value="single">Turno Único (Todos contra todos uma vez)</option>
+                <option value="double">Turno e Returno (Ida e volta)</option>
+                <option value="custom">Livre (Crie as rodadas e partidas à vontade)</option>
+              </select>
+              <p class="text-[11px] text-slate-500 mt-1">No formato Livre, você monta os confrontos com os times e rodadas que quiser.</p>
+            </div>
+
+            <div class="pt-4 flex justify-end">
+              <button type="submit" id="btn-save-settings" class="admin-only glow-neon px-6 py-3 bg-neon-accent hover:bg-emerald-400 text-black font-bold text-sm rounded-xl transition">
+                Salvar Alterações
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+        </div>
+        <!-- FIM TAB 4 -->
+
+      </div>
+      <!-- FIM tabs-slider -->
+    </div>
+    <!-- FIM tab-viewport -->
+
+  </main>
+
+  <!-- Modal para Criar Partida Livre/Personalizada -->
+  <div id="modal-custom-match" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-surface border border-borderLight rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+      <button onclick="fecharModalNovaPartida()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div class="space-y-1 border-b border-borderLight pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-neon-accent"></i>
+          <span>Nova Partida Livre</span>
+        </h3>
+        <p class="text-xs text-slate-400">Escolha a rodada e os dois times que vão se enfrentar.</p>
+      </div>
+
+      <form id="form-custom-match" onsubmit="salvarNovaPartidaLivre(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Número da Rodada</label>
+          <input type="number" id="custom-match-round" min="1" max="99" value="1" required class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Time Mandante</label>
+            <select id="custom-match-home" onchange="onCustomHomeChange()" required class="w-full bg-card border border-borderLight rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-neon-accent">
+              <!-- Preenchido dinamicamente -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Time Visitante</label>
+            <select id="custom-match-away" onchange="onCustomAwayChange()" required class="w-full bg-card border border-borderLight rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-neon-accent">
+              <!-- Preenchido dinamicamente -->
+            </select>
+          </div>
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2 border-t border-borderLight/50">
+          <button type="button" onclick="fecharModalNovaPartida()" class="px-4 py-2 bg-card hover:bg-cardLight text-slate-300 hover:text-white text-xs font-semibold rounded-xl border border-borderLight transition">
+            Cancelar
+          </button>
+          <button type="submit" class="glow-neon px-5 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition shadow">
+            Adicionar Partida
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Obrigatório: Cadastro de Senha Mestra do Criador -->
+  <div id="modal-set-password" class="hidden fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-surface border border-emerald-500/40 rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-5 shadow-2xl relative animate-in fade-in zoom-in-95">
+      <div class="flex items-start gap-4">
+        <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-neon-accent flex-shrink-0 text-xl">
+          <i data-lucide="lock" class="w-6 h-6"></i>
+        </div>
+        <div class="space-y-1">
+          <span class="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">Passo Obrigatório</span>
+          <h3 class="text-lg font-black text-white">Defina a Senha da Pelada</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            Esta senha permite que você (ou quem você autorizar) reassuma a administração desta pelada caso recarregue a página, mude de dispositivo ou perca o acesso.
+          </p>
+        </div>
+      </div>
+
+      <form id="form-set-password" onsubmit="salvarSenhaMestraObrigatoria(event)" class="space-y-4 pt-1">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Crie sua Senha Mestra</label>
+          <input type="password" id="input-new-pelada-password" placeholder="Mínimo 3 caracteres" required minlength="3" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
+        </div>
+
+        <div class="pt-2 flex justify-end">
+          <button type="submit" id="btn-save-master-password" class="w-full glow-neon py-3 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition shadow flex items-center justify-center gap-2">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+            <span>Confirmar e Iniciar Pelada</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal para Detalhes do Histórico ou Escalação -->
+  <div id="modal-match-details" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-surface border border-borderLight rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+      <button onclick="closeModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+
+      <div id="modal-content" class="space-y-4">
+        <!-- Preenchido dinamicamente via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Personalizado para Avisos, Alertas e Confirmações (Substitui alert/confirm nativos) -->
+  <div id="custom-dialog-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-surface border border-borderLight rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative transform transition-all animate-in fade-in zoom-in-95">
+      <div class="flex items-start gap-4">
+        <div id="custom-dialog-icon-container" class="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0 text-xl">
+          <i id="custom-dialog-icon" data-lucide="info" class="w-6 h-6 text-neon-accent"></i>
+        </div>
+        <div class="space-y-1 flex-1">
+          <h3 id="custom-dialog-title" class="text-base font-bold text-white">Aviso</h3>
+          <p id="custom-dialog-msg" class="text-xs text-slate-300 leading-relaxed"></p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-borderLight/50">
+        <button id="custom-dialog-cancel-btn" type="button" class="hidden px-4 py-2 bg-card hover:bg-cardLight text-slate-300 hover:text-white text-xs font-semibold rounded-xl border border-borderLight transition">
+          Cancelar
+        </button>
+        <button id="custom-dialog-ok-btn" type="button" class="px-5 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition shadow">
+          OK
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast" class="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-50 transform translate-y-24 opacity-0 transition-all duration-300 flex items-center gap-2 bg-emerald-500 text-black font-bold px-4 py-3 rounded-2xl shadow-xl text-xs">
+    <i data-lucide="check-circle" class="w-4 h-4"></i>
+    <span id="toast-msg">Sucesso!</span>
+  </div>
+
+  <!-- Scripts da Aplicação -->
+  <script src="/static/audio.js"></script>
+  <script src="/static/app.js"></script>
+  <script>
+    lucide.createIcons();
+    // Registro do Service Worker para PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((reg) => console.log('FutMatch PWA Service Worker registrado:', reg.scope))
+          .catch((err) => console.warn('Erro ao registrar Service Worker:', err));
+      });
+    }
+  </script>
+</body>
+</html>
