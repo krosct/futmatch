@@ -1,5 +1,5 @@
 import random
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Dict, Any
 from app.domain.models import Player, Team, Match
 
 COLOR_PALETTE = [
@@ -15,8 +15,44 @@ COLOR_PALETTE = [
 
 class MatchmakerService:
     @staticmethod
+    def calculate_effective_level(
+        base_level: int,
+        stats: Optional[Dict[str, Any]] = None,
+        min_matches_threshold: int = 3
+    ) -> float:
+        """
+        Calcula o nível efetivo ponderado:
+        - 0.40 para estrelas manuais base (1 a 5)
+        - 0.60 para performance real em jogos anteriores (vitórias 60% e média de gols 40%)
+        Se o jogador tiver menos de `min_matches_threshold` partidas, mantém 100% das estrelas base.
+        """
+        base = max(1.0, min(5.0, float(base_level)))
+        if not stats or stats.get("matches", 0) < min_matches_threshold:
+            return round(base, 2)
+
+        matches = stats["matches"]
+        wins = stats.get("wins", 0)
+        draws = stats.get("draws", 0)
+        goals = stats.get("goals", 0)
+
+        # Aproveitamento de vitórias/pontos (empate conta 0.5 vitória)
+        win_ratio = (wins + (0.5 * draws)) / matches if matches > 0 else 0.0
+        win_score = win_ratio * 5.0
+
+        # Média de gols (teto em 2 gols/jogo para escala de 5.0)
+        goals_per_match = goals / matches if matches > 0 else 0.0
+        goal_score = min(goals_per_match / 2.0, 1.0) * 5.0
+
+        # Performance score (escala 0 a 5.0)
+        performance_score = (win_score * 0.60) + (goal_score * 0.40)
+
+        # Ponderação 0.4 estrelas base + 0.6 performance
+        effective = (base * 0.40) + (performance_score * 0.60)
+        return round(max(1.0, min(5.0, effective)), 2)
+
+    @staticmethod
     def balance_teams(players: List[Player], players_per_team: int) -> List[Team]:
-        """Distribui jogadores entre times equilibrando goleiros e níveis de habilidade de forma justa."""
+        """Distribui jogadores entre times equilibrando goleiros e níveis de habilidade (efetivo ou base) de forma justa."""
         if not players:
             return []
 
@@ -32,27 +68,28 @@ class MatchmakerService:
                 players=[]
             ))
 
+        def get_score(p: Player) -> float:
+            return p.effective_level if p.effective_level is not None else float(p.level)
+
         # Separar goleiros de jogadores de linha
         goalkeepers = [p for p in players if p.is_goalkeeper]
         field_players = [p for p in players if not p.is_goalkeeper]
 
-        # Distribui goleiros primeiro (1 por time onde der)
-        random.shuffle(goalkeepers)
+        # Distribui goleiros primeiro, equilibrando pelo score
+        goalkeepers.sort(key=lambda p: (get_score(p), random.random()), reverse=True)
         for i, gk in enumerate(goalkeepers):
             teams[i % num_teams].players.append(gk)
 
-        # Ordena jogadores de linha por habilidade decrescente com leve jitter aleatório
-        # e distribui estilo "snake draft" para que o equilíbrio seja excelente
-        field_players.sort(key=lambda p: (p.level, random.random()), reverse=True)
+        # Ordena jogadores de linha por nível efetivo decrescente com leve jitter aleatório
+        # e distribui estilo "snake draft" dinâmico para garantir equilíbrio de força total
+        field_players.sort(key=lambda p: (get_score(p), random.random()), reverse=True)
 
-        direction = 1
-        curr_idx = 0
         for p in field_players:
             # Encontra o time com menos jogadores para balancear contagem
             min_len = min(len(t.players) for t in teams)
             eligible_teams = [t for t in teams if len(t.players) == min_len]
-            # Seleciona o com menor soma de nível atual
-            chosen_team = min(eligible_teams, key=lambda t: sum(pl.level for pl in t.players))
+            # Seleciona o time elegível com menor soma de nível atual
+            chosen_team = min(eligible_teams, key=lambda t: sum(get_score(pl) for pl in t.players))
             chosen_team.players.append(p)
 
         return teams

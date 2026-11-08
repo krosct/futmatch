@@ -56,6 +56,10 @@ class MatchRepositoryPort(ABC):
         pass
 
     @abstractmethod
+    async def get_players_stats(self, pelada_code: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        pass
+
+    @abstractmethod
     async def save_config(self, config: SessionConfig, pelada_code: Optional[str] = None) -> None:
         pass
 

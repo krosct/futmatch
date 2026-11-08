@@ -9,6 +9,7 @@ class Player:
     name: str
     level: int = 3  # 1 a 5 (para balancear times com 1 clique se desejar)
     is_goalkeeper: bool = False
+    effective_level: Optional[float] = None
 
 @dataclass
 class Team:

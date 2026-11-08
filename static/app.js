@@ -30,6 +30,21 @@ function getActivePeladaCode() {
   return localStorage.getItem('futmatch_active_pelada') || null;
 }
 
+function getAdminToken(code) {
+  const peladaCode = code || (state.currentPelada ? state.currentPelada.code : null);
+  if (!peladaCode) return "";
+  return localStorage.getItem(`futmatch_token_${peladaCode}`) || "";
+}
+
+function getAuthHeaders(extraHeaders = {}) {
+  const headers = { "Content-Type": "application/json", ...extraHeaders };
+  const token = getAdminToken();
+  if (token) {
+    headers["X-Admin-Token"] = token;
+  }
+  return headers;
+}
+
 function setActivePelada(code, role = 'spectator', adminToken = null) {
   state.currentPelada = { code };
   state.role = role;
@@ -189,7 +204,7 @@ async function criarNovaPelada() {
 
     const data = await res.json();
     // Quem cria é o Líder da pelada
-    setActivePelada(data.code, 'admin');
+    setActivePelada(data.code, 'admin', data.admin_token);
     state.currentPelada = data;
     state.players = [];
     state.teams = [];
@@ -311,7 +326,7 @@ async function salvarSenhaMestraObrigatoria(event) {
   try {
     const res = await fetch(`/api/peladas/${state.currentPelada.code}/set-password`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ password })
     });
 
@@ -320,6 +335,11 @@ async function salvarSenhaMestraObrigatoria(event) {
       await showCustomAlert(err.detail || "Erro ao salvar senha.", "Erro");
       if (btn) btn.disabled = false;
       return;
+    }
+
+    const data = await res.json();
+    if (data.admin_token) {
+      localStorage.setItem(`futmatch_token_${state.currentPelada.code}`, data.admin_token);
     }
 
     const modal = document.getElementById('modal-set-password');
@@ -482,7 +502,7 @@ async function salvarPoolPeladas(event) {
   try {
     const res = await fetch(`/api/peladas/${state.currentPelada.code}/pool`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ parent_code: parentCode })
     });
 
@@ -521,7 +541,7 @@ async function desvincularPool() {
   try {
     const res = await fetch(`/api/peladas/${state.currentPelada.code}/pool`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ parent_code: null })
     });
 
@@ -600,7 +620,7 @@ function sincronizarEstadoServidor() {
     try {
       await fetch(`/api/peladas/${state.currentPelada.code}/sync-state`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           players: state.players,
           teams: state.teams,
@@ -1027,10 +1047,11 @@ async function sortearTimes() {
   try {
     const res = await fetch("/api/balance-teams", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         players: state.players,
-        players_per_team: state.config.players_per_team
+        players_per_team: state.config.players_per_team,
+        pelada_code: state.currentPelada?.code || null
       })
     });
     const teams = await res.json();
@@ -1067,7 +1088,10 @@ function renderTeamsGrid() {
   }
 
   container.innerHTML = state.teams.map((t, idx) => {
-    const totalLevel = t.players.reduce((sum, p) => sum + p.level, 0);
+    const totalLevel = t.players.reduce((sum, p) => {
+      const lvl = (p.effective_level !== undefined && p.effective_level !== null) ? p.effective_level : p.level;
+      return sum + lvl;
+    }, 0);
     const avgStars = (totalLevel / (t.players.length || 1)).toFixed(1);
 
     return `
@@ -1080,22 +1104,27 @@ function renderTeamsGrid() {
             <span class="w-3.5 h-3.5 rounded-full shadow" style="background-color: ${t.color}"></span>
             <h4 class="font-extrabold text-white text-base">${escapeHtml(t.name)}</h4>
           </div>
-          <div class="text-[11px] font-bold text-slate-400 bg-pitch px-2 py-0.5 rounded-lg border border-borderLight">
+          <div class="text-[11px] font-bold text-slate-400 bg-pitch px-2 py-0.5 rounded-lg border border-borderLight" title="Força média do time">
             ★ ${avgStars} / 5.0
           </div>
         </div>
 
         <!-- Lista de Jogadores do Time -->
         <div class="space-y-1.5">
-          ${t.players.map(p => `
+          ${t.players.map(p => {
+            const hasEff = p.effective_level !== undefined && p.effective_level !== null && Math.abs(p.effective_level - p.level) >= 0.05;
+            return `
             <div class="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-surface/60 border border-borderLight/30">
               <span class="flex items-center gap-1.5 text-slate-200">
                 ${p.is_goalkeeper ? '<span class="text-[9px] font-extrabold bg-amber-500 text-black px-1 rounded">GK</span>' : ''}
                 ${escapeHtml(p.name)}
               </span>
-              <span class="text-amber-400 text-[10px]">${"★".repeat(p.level)}</span>
+              <div class="flex items-center gap-1.5">
+                ${hasEff ? `<span class="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-1 py-0.2 rounded" title="Nível efetivo ponderado pelo histórico (vitórias e gols): ${p.effective_level.toFixed(1)}">⚡ ${p.effective_level.toFixed(1)}</span>` : ''}
+                <span class="text-amber-400 text-[10px]" title="${p.level} estrelas cadastradas">${"★".repeat(p.level)}</span>
+              </div>
             </div>
-          `).join("")}
+          `;}).join("")}
         </div>
       </div>
     `;
@@ -1775,7 +1804,8 @@ async function reabrirPartida(matchId) {
     const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
     const deleteUrl = pCode ? `/api/matches/${matchId}?pelada_code=${pCode}` : `/api/matches/${matchId}`;
     const res = await fetch(deleteUrl, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: getAuthHeaders()
     });
 
     if (res.ok) {
@@ -1827,7 +1857,7 @@ async function salvarPartidaFinalizada(matchId) {
     const saveUrl = pCode ? `/api/matches/save?pelada_code=${pCode}` : "/api/matches/save";
     const res = await fetch(saveUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(m)
     });
 
@@ -2106,7 +2136,10 @@ async function limparHistorico() {
   try {
     const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
     const url = pCode ? `/api/matches?pelada_code=${pCode}` : "/api/matches";
-    const res = await fetch(url, { method: "DELETE" });
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: getAuthHeaders()
+    });
     if (res.ok) {
       showToast("Histórico zerado com sucesso!");
       await atualizarDashboard();
@@ -2196,7 +2229,7 @@ async function salvarConfiguracoes(event) {
     const url = pCode ? `/api/config?pelada_code=${pCode}` : "/api/config";
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(state.config)
     });
     if (res.ok) {

@@ -280,14 +280,10 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 return SessionConfig(**filtered)
             return SessionConfig()
 
-    async def get_dashboard_metrics(self, pelada_code: Optional[str] = None) -> Dict[str, Any]:
-        """Calcula métricas agregadas por jogador, times, média de gols e estatísticas gerais da pelada."""
+    async def get_players_stats(self, pelada_code: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        """Calcula métricas detalhadas de cada jogador a partir das partidas finalizadas da pelada e do pool."""
         matches = await self.list_matches(limit=1000, pelada_code=pelada_code)
         finished_matches = [m for m in matches if m.finished]
-
-        total_matches = len(finished_matches)
-        total_goals = sum(m.home_score + m.away_score for m in finished_matches)
-        avg_goals_per_match = round(total_goals / total_matches, 2) if total_matches > 0 else 0.0
 
         player_stats: Dict[str, Dict[str, Any]] = {}
 
@@ -306,7 +302,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
 
         for m in finished_matches:
             for p in m.home_players:
-                pid, pname = p["id"], p["name"]
+                pid, pname = str(p.get("id")), p.get("name", "Jogador")
                 init_player(pid, pname)
                 player_stats[pid]["matches"] += 1
                 if m.is_draw:
@@ -317,7 +313,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                     player_stats[pid]["losses"] += 1
 
             for p in m.away_players:
-                pid, pname = p["id"], p["name"]
+                pid, pname = str(p.get("id")), p.get("name", "Jogador")
                 init_player(pid, pname)
                 player_stats[pid]["matches"] += 1
                 if m.is_draw:
@@ -328,18 +324,36 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                     player_stats[pid]["losses"] += 1
 
             for ev in m.events:
-                ev_pid = ev.get("player_id")
+                ev_pid = str(ev.get("player_id")) if ev.get("player_id") is not None else None
                 ev_pname = ev.get("player_name", "Desconhecido")
                 if ev_pid:
                     init_player(ev_pid, ev_pname)
                     if ev.get("event_type") == "goal":
                         player_stats[ev_pid]["goals"] += 1
 
-        for p in player_stats.values():
+        lookup: Dict[str, Dict[str, Any]] = {}
+        for pid, p in player_stats.items():
             if p["matches"] > 0:
                 p["win_rate"] = round((p["wins"] / p["matches"]) * 100, 1)
+            lookup[pid] = p
+            if p.get("name"):
+                lookup[p["name"].strip().lower()] = p
 
-        players_list = list(player_stats.values())
+        return lookup
+
+    async def get_dashboard_metrics(self, pelada_code: Optional[str] = None) -> Dict[str, Any]:
+        """Calcula métricas agregadas por jogador, times, média de gols e estatísticas gerais da pelada."""
+        matches = await self.list_matches(limit=1000, pelada_code=pelada_code)
+        finished_matches = [m for m in matches if m.finished]
+
+        total_matches = len(finished_matches)
+        total_goals = sum(m.home_score + m.away_score for m in finished_matches)
+        avg_goals_per_match = round(total_goals / total_matches, 2) if total_matches > 0 else 0.0
+
+        players_lookup = await self.get_players_stats(pelada_code=pelada_code)
+        # Extrai registros únicos por id
+        unique_players = {v["id"]: v for k, v in players_lookup.items() if k == v["id"]}
+        players_list = list(unique_players.values())
         top_scorers = sorted(players_list, key=lambda x: (x["goals"], x["wins"]), reverse=True)[:10]
         top_winners = sorted(players_list, key=lambda x: (x["wins"], x["win_rate"]), reverse=True)[:10]
 
@@ -399,7 +413,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 "total_matches": total_matches,
                 "total_goals": total_goals,
                 "avg_goals_per_match": avg_goals_per_match,
-                "total_players": len(player_stats),
+                "total_players": len(unique_players),
                 "total_teams": len(team_stats),
                 "pool_count": len(chain_codes),
                 "pool_codes": chain_codes
