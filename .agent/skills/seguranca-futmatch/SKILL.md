@@ -88,5 +88,5 @@ Use esta skill para responder com contexto real do projeto, sem refazer a análi
 - Relatórios PDF gerados no navegador com html2canvas (patch documentado).
 
 ## 8. Pendências abertas no momento
-- Push e PR para validar o CI remotamente (pendente de autorização; push direto em `main` dispara deploy em produção, então não deve ser feito sem aval).
-- Commit das últimas correções (gol sem escalação, asserções do E2E e teste do CI), que ficaram no working tree.
+- Validação remota do CI (job `e2e` e `test` no GitHub): exige push de uma branch e PR em draft para `krosct/futmatch`. Só fazer com autorização explícita do dono. Nunca push direto em `main` sem aval, porque dispara o deploy em produção.
+- Commits: `22bf7b3` (segurança e front-end) e `ed9fac1` (gol sem escalação e testes), ambos em `main`, sem push.
