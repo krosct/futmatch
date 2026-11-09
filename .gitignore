@@ -39,3 +39,6 @@ Thumbs.db
 icon-previews/
 AGENTS.md
 agents.md
+
+# Dependências do E2E de navegador
+tests/e2e/node_modules/
