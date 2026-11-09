@@ -11,7 +11,7 @@ const SoundManager = {
   settings: {
     soundVolume: 0.8,
     musicVolume: 0.5,
-    muted: false
+    muted: typeof localStorage !== 'undefined' ? localStorage.getItem('futmatch_sound_muted') === 'true' : false
   },
 
   // Efeitos Sonoros / Músicas individuais ou listas para sorteio
@@ -62,12 +62,27 @@ const SoundManager = {
       '/static/sounds/wow_8.mp3',
       '/static/sounds/y2mate_rLgMJTu.mp3',
       '/static/sounds/yahoojingle.mp3'
+    ],
+    // Sons de alarme disponíveis para o fim da partida
+    alarms: [
+      '/static/alarms/standard-emergency-warning-signal.mp3',
+      '/static/alarms/samsung-alarm-morning-flower.mp3',
+      '/static/alarms/this-is-the-end-adele.mp3',
+      '/static/alarms/end_Mz9V9Hh.mp3',
+      '/static/alarms/electronic-alarm-clock-buzz-sfx-sound-effect-17-audiotrimmer.mp3',
+      '/static/alarms/alarm-danger-danger.mp3',
+      '/static/alarms/police-alarm.mp3',
+      '/static/alarms/warning-alarm-loud-af.mp3'
     ]
   },
 
   // Instância da música atualmente em reprodução (para controle de parada e troca)
   _currentMusic: null,
   _currentMusicAction: null,
+
+  // Instância de prévia de áudio (para teste de alarme nas configurações)
+  _previewAudio: null,
+  _previewSrc: null,
 
   // Cache de instâncias de áudio para desempenho rápido
   _audioCache: new Map(),
@@ -126,6 +141,9 @@ const SoundManager = {
         // Trata restrições de autoplay caso o usuário ainda não tenha interagido
         console.warn(`[SoundManager] Não foi possível reproduzir som para "${actionName}":`, err);
       });
+      if (window.auditTracker) {
+        window.auditTracker.track('play_sound_effect', source, 'media', { action: actionName, volume: audio.volume });
+      }
     } catch (e) {
       console.error('[SoundManager] Erro ao instanciar áudio:', e);
     }
@@ -240,10 +258,16 @@ const SoundManager = {
    */
   toggleMute() {
     this.settings.muted = !this.settings.muted;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('futmatch_sound_muted', this.settings.muted);
+    }
     if (this.settings.muted && this._currentMusic) {
       this._currentMusic.pause();
     } else if (!this.settings.muted && this._currentMusic) {
       this._currentMusic.play().catch(e => console.warn(e));
+    }
+    if (window.auditTracker) {
+      window.auditTracker.track('toggle_sound_mute', 'btn-toggle-sound', 'media', { muted: this.settings.muted });
     }
     return this.settings.muted;
   },
@@ -262,9 +286,96 @@ const SoundManager = {
         if (catalog.efeitos && Array.isArray(catalog.efeitos) && catalog.efeitos.length > 0) {
           this.registry.efeitos = catalog.efeitos;
         }
+        if (catalog.alarms && Array.isArray(catalog.alarms) && catalog.alarms.length > 0) {
+          this.registry.alarms = catalog.alarms;
+        }
       }
     } catch (e) {
       console.warn('[SoundManager] Não foi possível carregar catálogo dinâmico de áudio do servidor, mantendo faixas locais:', e);
+    }
+  },
+
+  /**
+   * Toca ou para uma prévia de som (por exemplo, ao testar alarme no dropdown)
+   * @param {string} source Caminho do arquivo ou nome do arquivo
+   * @param {Function} [onEndCallback] Chamado quando a prévia terminar ou parar
+   * @returns {boolean} true se começou a tocar, false se parou
+   */
+  togglePreview(source, onEndCallback = null) {
+    let fullPath = source;
+    if (!fullPath.startsWith('/') && !fullPath.startsWith('http')) {
+      fullPath = `/static/alarms/${source}`;
+    }
+
+    if (this._previewAudio && this._previewSrc === fullPath && !this._previewAudio.paused) {
+      this._previewAudio.pause();
+      this._previewAudio.currentTime = 0;
+      this._previewAudio = null;
+      this._previewSrc = null;
+      if (onEndCallback) onEndCallback(false);
+      return false;
+    }
+
+    if (this._previewAudio) {
+      this._previewAudio.pause();
+      this._previewAudio.currentTime = 0;
+      this._previewAudio = null;
+    }
+
+    try {
+      const audio = new Audio(fullPath);
+      audio.volume = this.settings.soundVolume;
+      this._previewAudio = audio;
+      this._previewSrc = fullPath;
+      audio.onended = () => {
+        this._previewAudio = null;
+        this._previewSrc = null;
+        if (onEndCallback) onEndCallback(false);
+      };
+      audio.play().catch(e => {
+        console.warn('[SoundManager] Erro ao tocar prévia:', e);
+        if (onEndCallback) onEndCallback(false);
+      });
+      if (onEndCallback) onEndCallback(true);
+      return true;
+    } catch (e) {
+      console.error('[SoundManager] Falha ao instanciar prévia:', e);
+      if (onEndCallback) onEndCallback(false);
+      return false;
+    }
+  },
+
+  stopPreview() {
+    if (this._previewAudio) {
+      this._previewAudio.onended = null;
+      this._previewAudio.pause();
+      this._previewAudio.currentTime = 0;
+      this._previewAudio = null;
+      this._previewSrc = null;
+    }
+  },
+
+  /**
+   * Toca o alarme especificado ou o padrão.
+   * O alarme possui prioridade máxima e toca MESMO se o app estiver silenciado/mutado.
+   * @param {string} [alarmName] Nome do arquivo do alarme
+   */
+  playAlarm(alarmName = null) {
+    let path = alarmName;
+    if (!path) {
+      path = '/static/alarms/standard-emergency-warning-signal.mp3';
+    } else if (!path.startsWith('/') && !path.startsWith('http')) {
+      path = `/static/alarms/${path}`;
+    }
+
+    try {
+      const audio = new Audio(path);
+      audio.volume = this.settings.soundVolume || 0.8;
+      audio.play().catch(err => {
+        console.warn('[SoundManager] Não foi possível reproduzir som de alarme:', err);
+      });
+    } catch (e) {
+      console.error('[SoundManager] Erro ao disparar alarme:', e);
     }
   }
 };

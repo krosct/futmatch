@@ -24,6 +24,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Canvas Confetti CDN -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- Bibliotecas para Geração de PDF de Alta Fidelidade (html2canvas 1.4.1 + jsPDF 2.5.1) -->
+  <script src="/static/html2canvas.min.js"></script>
+  <script src="/static/jspdf.umd.min.js"></script>
 
   <!-- Google Fonts: Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -57,11 +60,39 @@
   </script>
 
   <style>
-    /* Custom Scrollbars */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #0b0f19; }
-    ::-webkit-scrollbar-thumb { background: #223046; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #10b981; }
+    /* Ocultar barra de rolagem visualmente em todo o documento e containers internos, mantendo o scroll funcional */
+    html, body {
+      scrollbar-width: none; /* Firefox */
+      -ms-overflow-style: none; /* IE e Edge legado */
+    }
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    /* Ocultar barra de rolagem em todos os elementos com scroll mantendo a rolagem */
+    .overflow-y-auto,
+    .overflow-x-auto,
+    .overflow-auto,
+    [class*="overflow-y-"],
+    [class*="overflow-x-"] {
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+    }
+    .overflow-y-auto::-webkit-scrollbar,
+    .overflow-x-auto::-webkit-scrollbar,
+    .overflow-auto::-webkit-scrollbar,
+    [class*="overflow-y-"]::-webkit-scrollbar,
+    [class*="overflow-x-"]::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+
+    /* Custom Scrollbars fallback */
+    ::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
     .glow-neon {
       box-shadow: 0 0 25px rgba(0, 245, 155, 0.25);
@@ -73,6 +104,7 @@
     /* Container de abas com deslocamento contínuo (estilo carrossel/slide com respiro elegante) */
     :root {
       --tab-gap: 48px;
+      --active-tab-index: 0;
     }
 
     #tab-viewport {
@@ -86,6 +118,7 @@
       align-items: flex-start;
       gap: var(--tab-gap);
       width: calc(400% + (3 * var(--tab-gap)));
+      transform: translateX(calc(-1 * var(--active-tab-index) * ((100% - 3 * var(--tab-gap)) / 4 + var(--tab-gap))));
       transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
       will-change: transform;
     }
@@ -124,10 +157,141 @@
         transition: none !important;
       }
     }
+
+    /* Estilo de Confronto / Combate de Aço Brutal para VS */
+    .vs-silver-metal {
+      display: inline-block;
+      line-height: 1.15;
+      padding: 2px 4px;
+      overflow: visible;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 32%, #64748b 68%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 10px rgba(148, 163, 184, 0.4));
+      transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), filter 0.2s ease;
+    }
+
+    /* Estilo Gravado / Cravado de Partida Finalizada com Frisos Metálicos */
+    .match-finished-carved {
+      background: linear-gradient(180deg, #475569 0%, #94a3b8 45%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 -1.5px 1px #000000) drop-shadow(0 1px 1px rgba(255, 255, 255, 0.4));
+      letter-spacing: 0.25em;
+    }
+
+    .match-finished-groove-left {
+      height: 1.5px;
+      background: linear-gradient(to right, transparent, #64748b 80%, #94a3b8);
+      box-shadow: 0 1px 1px rgba(255, 255, 255, 0.25);
+    }
+
+    .match-finished-groove-right {
+      height: 1.5px;
+      background: linear-gradient(to left, transparent, #64748b 80%, #94a3b8);
+      box-shadow: 0 1px 1px rgba(255, 255, 255, 0.25);
+    }
+
+    .vs-btn-active:hover .vs-silver-metal {
+      transform: scale(1.1);
+      filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.6)) drop-shadow(0 2px 6px rgba(0,0,0,0.9));
+    }
+
+    .vs-btn-active:active .vs-silver-metal {
+      transform: scale(0.92);
+    }
+
+    @keyframes gentleFloatBounceDown {
+      0%, 100% {
+        transform: translateY(0);
+        opacity: 0.7;
+      }
+      50% {
+        transform: translateY(6px);
+        opacity: 1;
+      }
+    }
+
+    @keyframes gentleFloatBounceUp {
+      0%, 100% {
+        transform: translateY(0);
+        opacity: 0.7;
+      }
+      50% {
+        transform: translateY(-6px);
+        opacity: 1;
+      }
+    }
+
+    .scroll-indicator-bounce-down {
+      animation: gentleFloatBounceDown 2.4s ease-in-out infinite;
+    }
+
+    .scroll-indicator-bounce-up {
+      animation: gentleFloatBounceUp 2.4s ease-in-out infinite;
+    }
+
+    @keyframes vsPulseBorder {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.04); opacity: 1; }
+    }
+
+    .timer-running-pulse {
+      animation: vsPulseBorder 2s ease-in-out infinite;
+    }
+
+    /* Banner da pelada: degradê neon da esquerda para a direita com brilho pulsante */
+    .pelada-banner {
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 100% 50%, rgba(0, 245, 155, 0.38), transparent 45%),
+        linear-gradient(90deg, rgba(0, 245, 155, 0.18), rgba(22, 32, 50, 0.6) 60%, #162032);
+      animation: peladaBannerPulse 3s ease-in-out infinite;
+    }
+    .pelada-banner::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #00f59b, transparent);
+      opacity: 0.8;
+      pointer-events: none;
+    }
+    .pelada-banner > * {
+      position: relative;
+      z-index: 1;
+    }
+    /* Selo de partidas pendentes sobre a aba ativa (fundo verde): mantém o número legível */
+    .nav-tab.active #badge-pending-matches {
+      background-color: rgba(0, 0, 0, 0.22);
+      color: #000;
+    }
+    @keyframes peladaBannerPulse {
+      0%, 100% { box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.3), 0 0 18px -6px rgba(0, 245, 155, 0.25); }
+      50% { box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.55), 0 0 34px -4px rgba(0, 245, 155, 0.45); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pelada-banner {
+        animation: none;
+        box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.3);
+      }
+    }
   </style>
 </head>
 
-<body class="bg-pitch text-slate-100 min-h-screen flex flex-col font-sans selection:bg-neon-accent selection:text-black antialiased">
+<body class="bg-pitch text-slate-100 min-h-screen flex flex-col font-sans selection:bg-neon-accent selection:text-black antialiased relative">
+
+  <!-- Imagem de Fundo Global da Aplicação (10% menor de opacidade em relação à landing) -->
+  <div id="global-bg" class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+    <img src="https://images.unsplash.com/photo-1522778119026-d647f0596c20?auto=format&fit=crop&w=2000&q=80" 
+         alt="" 
+         class="w-full h-full object-cover object-center filter brightness-50 contrast-125 saturate-120 opacity-90">
+    <div class="absolute inset-0 bg-gradient-to-t from-pitch via-pitch/80 to-pitch/60"></div>
+    <div class="absolute inset-0 bg-radial-at-c from-transparent via-pitch/50 to-pitch"></div>
+  </div>
 
   <!-- ========================================== -->
   <!-- TELA INICIAL / LANDING: SELEÇÃO DE PELADA -->
@@ -174,7 +338,8 @@
           </div>
 
           <div class="mt-4 flex flex-col sm:flex-row gap-2.5">
-            <input type="text" id="input-new-pelada-name" placeholder="Nome da Pelada (ex: Racha dos Amigos)" maxlength="40" class="flex-1 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
+            <input type="text" id="input-new-pelada-name" placeholder="Nome da pelada" minlength="3" maxlength="40" required onkeydown="if(event.key==='Enter') criarNovaPelada()" class="flex-1 min-w-0 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
+            <input type="password" id="input-create-pelada-password" placeholder="Senha mestra" minlength="3" maxlength="64" autocomplete="new-password" required onkeydown="if(event.key==='Enter') criarNovaPelada()" class="flex-1 min-w-0 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
             <button onclick="criarNovaPelada()" id="btn-create-pelada" class="glow-neon px-5 py-2.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap">
               <i data-lucide="sparkles" class="w-4 h-4"></i>
               <span>Criar Pelada</span>
@@ -201,7 +366,7 @@
           </div>
 
           <div class="mt-4 flex flex-col sm:flex-row gap-2.5">
-            <input type="text" id="input-join-code" placeholder="Código (ex: A8F2K)" maxlength="5" uppercase class="uppercase tracking-widest text-center font-mono font-bold bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-400">
+            <input type="text" id="input-join-code" placeholder="Código (ex: A8F2K)" maxlength="5" uppercase onkeydown="if(event.key==='Enter') entrarNaPelada()" class="uppercase tracking-widest text-center font-mono font-bold bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-400">
             <button onclick="entrarNaPelada()" id="btn-join-pelada" class="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap shadow-lg shadow-blue-500/20">
               <i data-lucide="arrow-right" class="w-4 h-4"></i>
               <span>Entrar como Espectador</span>
@@ -222,7 +387,7 @@
   </div>
 
   <!-- Top App Navigation -->
-  <header class="border-b border-borderLight/70 bg-surface/95 backdrop-blur-md sticky top-0 z-40 transition-all">
+  <header id="app-header" class="hidden border-b border-borderLight/70 bg-surface/95 backdrop-blur-md sticky top-0 z-40 transition-all">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3 min-h-16">
       
       <!-- Logo, Branding & Status da Pelada -->
@@ -233,11 +398,11 @@
         <div>
           <div class="flex items-center space-x-2">
             <h1 class="text-xl font-black tracking-tight text-white leading-none">Fut<span class="text-neon-accent">Match</span></h1>
-            <span class="text-[9px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 leading-none">PRO</span>
+            <span class="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 leading-none">PRO</span>
           </div>
           <div class="flex items-center gap-1.5 mt-1">
-            <span id="current-pelada-code-display" class="inline-flex items-center justify-center h-5 font-mono text-[10px] font-bold text-neon-accent bg-emerald-950/70 border border-emerald-500/30 px-2 rounded-md cursor-pointer select-none hover:bg-emerald-900/80 transition leading-none" onclick="copiarCodigoPelada()" title="Clique para copiar código">#-----</span>
-            <span id="role-badge" class="inline-flex items-center justify-center h-5 text-[10px] font-bold px-2 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 gap-1 leading-none">
+            <span id="current-pelada-code-display" class="inline-flex items-center justify-center h-5 font-mono text-[10px] font-bold text-neon-accent bg-emerald-950/70 border border-emerald-500/30 px-2 rounded-md cursor-pointer select-none hover:bg-emerald-900/80 transition leading-none flex-shrink-0" onclick="copiarCodigoPelada()" title="Clique para copiar código">#-----</span>
+            <span id="role-badge" class="inline-flex items-center justify-center h-5 text-[10px] font-bold px-1.5 sm:px-2 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 gap-1 leading-none flex-shrink-0">
               <i data-lucide="eye" class="w-2.5 h-2.5"></i>
               <span>Espectador</span>
             </span>
@@ -246,63 +411,66 @@
       </div>
 
       <!-- Main Navigation Tabs -->
-      <nav class="hidden md:flex items-center space-x-1 bg-pitch/80 p-1 rounded-xl border border-borderLight flex-shrink-0">
-        <button onclick="switchTab('matchmaker')" id="tab-btn-matchmaker" class="nav-tab active flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-black bg-neon-accent shadow-sm">
-          <i data-lucide="users" class="w-3.5 h-3.5"></i>
-          <span>Jogadores & Times</span>
+      <nav class="hidden lg:flex items-center space-x-1 bg-pitch/80 p-1 rounded-xl border border-borderLight flex-shrink-0 relative">
+        <!-- Indicador deslizante da aba selecionada (posicionado por atualizarIndicadorNav) -->
+        <span id="nav-tab-pill" aria-hidden="true" class="absolute left-0 top-0 rounded-lg bg-neon-accent shadow-sm pointer-events-none transition-all duration-300 ease-out opacity-0"></span>
+        <button onclick="switchTab('matchmaker')" id="tab-btn-matchmaker" class="nav-tab active relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-black">
+          <i data-lucide="users" class="w-3.5 h-3.5 pointer-events-none"></i>
+          <span class="pointer-events-none">Jogadores & Times</span>
         </button>
-        <button onclick="switchTab('fixtures')" id="tab-btn-fixtures" class="nav-tab flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white hover:bg-cardLight">
-          <i data-lucide="trophy" class="w-3.5 h-3.5"></i>
-          <span>Jogos da Rodada</span>
-          <span id="badge-pending-matches" class="hidden text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold">0</span>
+        <button onclick="switchTab('fixtures')" id="tab-btn-fixtures" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
+          <i data-lucide="trophy" class="w-3.5 h-3.5 pointer-events-none"></i>
+          <span class="pointer-events-none">Jogos da Rodada</span>
+          <span id="badge-pending-matches" class="hidden text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold pointer-events-none">0</span>
         </button>
-        <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="nav-tab flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white hover:bg-cardLight">
-          <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>
-          <span>Dashboard & Histórico</span>
+        <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
+          <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 pointer-events-none"></i>
+          <span class="pointer-events-none">Dashboard & Histórico</span>
         </button>
-        <button onclick="switchTab('settings')" id="tab-btn-settings" class="nav-tab flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:text-white hover:bg-cardLight">
-          <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
-          <span>Configurações</span>
+        <button onclick="switchTab('settings')" id="tab-btn-settings" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
+          <i data-lucide="sliders" class="w-3.5 h-3.5 pointer-events-none"></i>
+          <span class="pointer-events-none">Configurações</span>
         </button>
       </nav>
 
       <!-- Action Buttons -->
-      <div class="flex items-center space-x-2 flex-shrink-0 ml-auto md:ml-0">
-        <button onclick="copiarLinkPelada()" title="Copiar link da pelada para compartilhar" class="flex items-center space-x-1 px-2.5 py-1.5 bg-card border border-borderLight hover:border-neon-accent/50 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition">
-          <i data-lucide="share-2" class="w-3.5 h-3.5 text-neon-accent"></i>
-          <span class="hidden sm:inline">Compartilhar</span>
+      <div class="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0 ml-auto lg:ml-0">
+        <button onclick="toggleSoundMute()" id="btn-toggle-sound" title="Alternar Som (Mudo / Ativado)" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-neon-accent/50 text-slate-300 hover:text-neon-accent rounded-lg text-xs font-semibold transition" aria-label="Alternar Som">
+          <i id="sound-toggle-icon" data-lucide="volume-2" class="w-4 h-4 text-neon-accent"></i>
         </button>
-        <button onclick="sairPelada()" title="Trocar de Pelada / Voltar ao Início" class="flex items-center space-x-1 px-2.5 py-1.5 bg-card border border-borderLight hover:border-rose-500/50 text-slate-300 hover:text-rose-400 rounded-lg text-xs font-semibold transition">
-          <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
-          <span class="hidden sm:inline">Sair</span>
+        <button onclick="copiarLinkPelada()" title="Copiar link da pelada para compartilhar" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-neon-accent/50 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition" aria-label="Compartilhar link da pelada">
+          <i data-lucide="share-2" class="w-4 h-4 text-neon-accent"></i>
+        </button>
+        <button onclick="sairPelada()" title="Trocar de Pelada / Voltar ao Início" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-rose-500/50 text-slate-300 hover:text-rose-400 rounded-lg text-xs font-semibold transition" aria-label="Sair da pelada">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
         </button>
       </div>
     </div>
   </header>
 
   <!-- Mobile Tab Bar (Bottom Navigation) -->
-  <nav id="mobile-bottom-nav" class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/95 backdrop-blur-md border-t border-borderLight px-2 py-1.5 flex items-center justify-around shadow-2xl safe-area-bottom">
-    <button onclick="switchTab('matchmaker')" id="tab-btn-mobile-matchmaker" class="p-2 text-xs flex flex-col items-center text-neon-accent font-medium transition-colors">
-      <i data-lucide="users" class="w-5 h-5 mb-1"></i>
-      <span>Times</span>
+  <nav id="mobile-bottom-nav" class="hidden lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/95 backdrop-blur-md border-t border-borderLight px-2 py-1.5 flex items-center justify-around shadow-2xl safe-area-bottom">
+    <button onclick="switchTab('matchmaker')" id="tab-btn-mobile-matchmaker" class="p-2 text-xs flex flex-col items-center text-neon-accent font-medium transition-colors duration-150">
+      <i data-lucide="users" class="w-5 h-5 mb-1 pointer-events-none"></i>
+      <span class="pointer-events-none">Times</span>
     </button>
-    <button onclick="switchTab('fixtures')" id="tab-btn-mobile-fixtures" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors relative">
-      <i data-lucide="trophy" class="w-5 h-5 mb-1"></i>
-      <span>Jogos</span>
-      <span id="badge-pending-matches-mobile" class="hidden absolute top-1 right-2 text-[9px] bg-emerald-500/20 text-emerald-300 px-1 rounded-full font-bold">0</span>
+    <button onclick="switchTab('fixtures')" id="tab-btn-mobile-fixtures" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150 relative">
+      <i data-lucide="trophy" class="w-5 h-5 mb-1 pointer-events-none"></i>
+      <span class="pointer-events-none">Jogos</span>
+      <span id="badge-pending-matches-mobile" class="hidden absolute top-1 right-2 text-[10px] bg-emerald-500/20 text-emerald-300 px-1 rounded-full font-bold pointer-events-none">0</span>
     </button>
-    <button onclick="switchTab('dashboard')" id="tab-btn-mobile-dashboard" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors">
-      <i data-lucide="bar-chart-3" class="w-5 h-5 mb-1"></i>
-      <span>Métricas</span>
+    <button onclick="switchTab('dashboard')" id="tab-btn-mobile-dashboard" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150">
+      <i data-lucide="bar-chart-3" class="w-5 h-5 mb-1 pointer-events-none"></i>
+      <span class="pointer-events-none">Métricas</span>
     </button>
-    <button onclick="switchTab('settings')" id="tab-btn-mobile-settings" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors">
-      <i data-lucide="sliders" class="w-5 h-5 mb-1"></i>
-      <span>Ajustes</span>
+    <button onclick="switchTab('settings')" id="tab-btn-mobile-settings" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150">
+      <i data-lucide="sliders" class="w-5 h-5 mb-1 pointer-events-none"></i>
+      <span class="pointer-events-none">Ajustes</span>
     </button>
   </nav>
 
   <!-- Main View Container com Viewport e Slider de Deslocamento das Abas -->
-  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-8 overflow-hidden">
+  <main id="app-main" class="hidden flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 pb-32 sm:pb-36 lg:pb-8 overflow-hidden relative z-10">
 
     <div id="tab-viewport">
       <div id="tabs-slider">
@@ -313,21 +481,18 @@
         <div class="tab-slide-pane">
           <section id="section-matchmaker" class="space-y-6">
       
-      <!-- Top banner intro -->
-      <div class="bg-gradient-to-r from-card to-surface p-6 rounded-3xl border border-borderLight flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
-        <div class="space-y-1 text-center md:text-left">
-          <h2 class="text-2xl font-bold text-white flex items-center justify-center md:justify-start gap-2">
-            <span>Montagem Dinâmica de Pelada</span>
-          </h2>
-          <p class="text-sm text-slate-400 max-w-xl">
-            O sistema distribui goleiros, equilibra os níveis de estrelas e já gera a tabela de confrontos sem esforço!
-          </p>
+      <!-- Top banner intro: nome, data da pool e descrição da pelada -->
+      <div class="pelada-banner p-6 rounded-3xl border border-borderLight flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl">
+        <div class="space-y-1 text-center md:text-left min-w-0">
+          <h2 id="pelada-header-name" class="text-3xl sm:text-4xl font-black text-white break-words"></h2>
+          <p id="pelada-header-date" class="text-sm font-semibold text-neon-accent empty:hidden"></p>
+          <p id="pelada-header-desc" class="text-sm text-slate-400 max-w-xl break-words"></p>
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-          <button onclick="sortearTimes()" class="admin-only glow-neon flex items-center space-x-2 px-6 py-3.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold rounded-2xl transition shadow-lg text-sm active:scale-95">
-            <i data-lucide="dices" class="w-5 h-5"></i>
-            <span>Equilibrar Times & Sorteio</span>
+          <button id="btn-quick-start" onclick="inicioRapido()" title="Início rápido" class="admin-only glow-neon flex items-center space-x-2 px-6 py-3.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold rounded-2xl transition shadow-lg text-sm active:scale-95">
+            <i data-lucide="zap" class="w-5 h-5"></i>
+            <span>Início rápido</span>
           </button>
         </div>
       </div>
@@ -357,20 +522,20 @@
             <div class="flex gap-2">
               <input id="input-player-name" type="text" placeholder="Nome do jogador..." 
                 onkeydown="if(event.key==='Enter') addSinglePlayer()"
-                class="flex-1 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent focus:ring-1 focus:ring-neon-accent transition placeholder:text-slate-500">
-              <button onclick="addSinglePlayer()" class="px-4 py-2.5 bg-cardLight hover:bg-neon-accent hover:text-black font-semibold rounded-xl text-sm transition">
+                class="flex-1 min-w-0 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent focus:ring-1 focus:ring-neon-accent transition placeholder:text-slate-500">
+              <button onclick="addSinglePlayer()" class="shrink-0 whitespace-nowrap px-4 py-2.5 bg-cardLight hover:bg-neon-accent hover:text-black font-semibold rounded-xl text-sm transition">
                 + Adicionar
               </button>
             </div>
 
             <!-- Opções rápidas do novo jogador -->
-            <div class="flex items-center justify-between text-xs text-slate-400 bg-card/60 p-2.5 rounded-xl border border-borderLight/60">
-              <label class="flex items-center space-x-2 cursor-pointer">
+            <div class="flex items-center justify-between gap-3 text-xs text-slate-400 bg-card/60 p-2.5 rounded-xl border border-borderLight/60">
+              <label class="flex items-center space-x-2 cursor-pointer whitespace-nowrap shrink-0">
                 <input id="check-is-gk" type="checkbox" class="accent-emerald-500 w-4 h-4 rounded">
                 <span>🧤 É Goleiro?</span>
               </label>
 
-              <div class="flex items-center space-x-1">
+              <div class="flex items-center space-x-1 shrink-0 whitespace-nowrap">
                 <span>Nível:</span>
                 <select id="select-level" class="bg-cardLight text-white rounded-lg px-2 py-1 text-xs border border-borderLight focus:outline-none">
                   <option value="5">⭐⭐⭐⭐⭐ Craque</option>
@@ -400,24 +565,41 @@
             </details>
           </div>
 
-          <!-- Lista rolante de jogadores cadastrados -->
-          <div class="space-y-2 max-h-[360px] overflow-y-auto pr-1" id="players-list-container">
-            <!-- Inserido dinamicamente via JS -->
-            <div class="text-center py-8 text-slate-500 text-sm">Nenhum jogador na lista ainda.<br>Adicione jogadores acima!</div>
+          <!-- Container relativo para a lista de jogadores e os indicadores de rolagem suave -->
+          <div class="relative">
+            <!-- Indicador sutil de scroll para cima com animação suave (sem círculo e sem sombra) -->
+            <div id="players-scroll-indicator-up" class="hidden pointer-events-none absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-surface via-surface/80 to-transparent flex items-start justify-center pt-1 z-20 transition-opacity duration-300">
+              <button type="button" onclick="scrollPlayersListUp()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais jogadores acima" aria-label="Rolar para ver jogadores acima">
+                <i data-lucide="chevron-up" class="w-7 h-7 stroke-[2.5]"></i>
+              </button>
+            </div>
+
+            <!-- Lista rolante de jogadores cadastrados -->
+            <div class="space-y-2 max-h-[360px] overflow-y-auto pr-1" id="players-list-container">
+              <!-- Inserido dinamicamente via JS -->
+              <div class="text-center py-8 text-slate-500 text-sm">Nenhum jogador na lista ainda.<br>Adicione jogadores acima!</div>
+            </div>
+
+            <!-- Indicador sutil de scroll para baixo com animação suave (sem círculo e sem sombra) -->
+            <div id="players-scroll-indicator" class="hidden pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-surface via-surface/80 to-transparent flex items-end justify-center pb-1 z-20 transition-opacity duration-300">
+              <button type="button" onclick="scrollPlayersListDown()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais jogadores abaixo" aria-label="Rolar para ver mais jogadores">
+                <i data-lucide="chevron-down" class="w-7 h-7 stroke-[2.5]"></i>
+              </button>
+            </div>
           </div>
         </div>
 
         <!-- Times Montados e Prontos (7 Colunas) -->
         <div class="lg:col-span-7 space-y-5">
           <div class="bg-surface border border-borderLight rounded-3xl p-6 space-y-4">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-borderLight pb-4">
+            <div class="flex items-center justify-between gap-3 border-b border-borderLight pb-4">
               <div>
                 <h3 class="text-lg font-bold text-white flex items-center gap-2">
                   <i data-lucide="shield" class="w-5 h-5 text-neon-accent"></i>
                   <span>Times Montados</span>
                   <div class="relative group/info inline-flex items-center">
-                    <button type="button" aria-label="Informações do cálculo" title="Balanceamento: 40% estrelas base + 60% histórico recente (vitórias e gols)" class="w-5 h-5 rounded-md bg-cardLight hover:bg-slate-700 text-slate-400 hover:text-neon-accent border border-borderLight flex items-center justify-center transition cursor-help">
-                      <i data-lucide="info" class="w-3.5 h-3.5 stroke-[2.2]"></i>
+                    <button type="button" aria-label="Informações do cálculo" title="Balanceamento: 40% estrelas base + 60% histórico recente (vitórias e gols)" class="text-slate-400 hover:text-neon-accent transition cursor-help flex items-center justify-center p-0.5 rounded-full focus:outline-none">
+                      <i data-lucide="info" class="w-4 h-4 stroke-[2]"></i>
                     </button>
                     <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/info:block pointer-events-none z-50 w-64 p-2 bg-slate-900/95 backdrop-blur border border-borderLight text-slate-200 text-xs rounded-xl shadow-2xl text-center leading-snug">
                       Balanceamento: 40% estrelas base + 60% histórico recente (vitórias e gols).
@@ -425,12 +607,15 @@
                   </div>
                 </h3>
                 <p class="text-xs text-slate-400">Distribuição com equilíbrio por nível e posições</p>
+                <p id="last-combination-info" class="text-[11px] text-slate-400 mt-0.5 empty:hidden"></p>
               </div>
 
               <div class="flex items-center gap-2">
-                <button onclick="gerarTabelaConfrontos()" id="btn-generate-matches" class="hidden flex items-center gap-1.5 px-4 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition shadow">
-                  <i data-lucide="calendar" class="w-4 h-4"></i>
-                  <span>Gerar Confrontos Agora</span>
+                <button onclick="sortearTimes()" id="btn-balance-teams" title="Equilibrar times & sorteio" aria-label="Equilibrar times & sorteio" class="admin-only w-9 h-9 bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+                  <i data-lucide="dices" class="w-4 h-4"></i>
+                </button>
+                <button onclick="adicionarTimeManual()" id="btn-add-team" title="Adicionar time" aria-label="Adicionar time" class="admin-only w-9 h-9 bg-neon-accent hover:bg-emerald-400 text-black font-bold rounded-xl transition flex items-center justify-center shadow active:scale-95">
+                  <i data-lucide="plus" class="w-4 h-4"></i>
                 </button>
               </div>
             </div>
@@ -439,7 +624,7 @@
             <div id="teams-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div class="md:col-span-2 text-center py-16 border-2 border-dashed border-borderLight rounded-2xl text-slate-500 space-y-3">
                 <i data-lucide="users-2" class="w-12 h-12 mx-auto stroke-1 text-slate-600"></i>
-                <p class="text-sm">Clique em <strong class="text-neon-accent">"Equilibrar Times & Sorteio"</strong> para dividir os jogadores automaticamente entre os coletes!</p>
+                <p class="text-sm">Clique <strong class="text-neon-accent">aqui</strong> para criar os times</p>
               </div>
             </div>
           </div>
@@ -463,22 +648,20 @@
         <div>
           <h2 class="text-2xl font-black text-white flex items-center gap-2">
             <span>Rodadas e Confrontos</span>
-            <span id="label-active-round" class="text-xs bg-neon-accent/20 text-neon-accent px-3 py-1 rounded-full border border-neon-accent/30 font-bold">Ao Vivo</span>
+            <span id="label-active-round" class="whitespace-nowrap text-xs bg-neon-accent/20 text-neon-accent px-3 py-1 rounded-full border border-neon-accent/30 font-bold">Ao Vivo</span>
           </h2>
         </div>
 
-        <div class="flex items-center gap-2 flex-wrap">
-          <button id="btn-add-custom-match" onclick="abrirModalNovaPartida()" class="admin-only px-4 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow">
-            <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
-            <span>Nova Partida</span>
+        <div class="flex items-center gap-2">
+          <button id="btn-add-custom-match" onclick="abrirModalNovaPartida()" title="Nova Partida" aria-label="Nova Partida" class="admin-only w-9 h-9 bg-neon-accent hover:bg-emerald-400 text-black font-bold rounded-xl transition flex items-center justify-center shadow active:scale-95">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
           </button>
-          <button onclick="gerarTabelaConfrontos()" class="admin-only px-4 py-2 bg-card hover:bg-cardLight border border-borderLight text-xs font-semibold rounded-xl text-slate-300 transition flex items-center gap-1.5">
-            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-            <span id="btn-fixtures-action-label">Recriar Tabela</span>
+          <button id="btn-recreate-fixtures" onclick="gerarTabelaConfrontos()" title="Recriar Tabela" aria-label="Recriar Tabela" class="admin-only w-9 h-9 bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            <span id="btn-fixtures-action-label" class="sr-only">Recriar Tabela</span>
           </button>
-          <button id="btn-clear-fixtures" onclick="limparTodasRodadas()" class="admin-only px-3.5 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold rounded-xl transition flex items-center gap-1.5" title="Remover todas as rodadas e confrontos">
-            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-            <span>Limpar Rodadas</span>
+          <button id="btn-clear-fixtures" onclick="limparTodasRodadas()" title="Limpar Rodadas" aria-label="Limpar Rodadas" class="admin-only w-9 h-9 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
         </div>
       </div>
@@ -615,20 +798,117 @@
           <div class="space-y-4">
             <div>
               <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">⚽ Top Goleadores</h4>
-              <div id="list-scorers" class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                <p class="text-xs text-slate-500 py-2">Sem gols cadastrados ainda.</p>
+              <div class="relative">
+                <div id="scorers-scroll-indicator-up" class="hidden pointer-events-none absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-surface via-surface/80 to-transparent flex items-start justify-center pt-0.5 z-20 transition-opacity duration-300">
+                  <button type="button" onclick="scrollScorersListUp()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais artilheiros acima" aria-label="Rolar para ver artilheiros acima">
+                    <i data-lucide="chevron-up" class="w-6 h-6 stroke-[2.5]"></i>
+                  </button>
+                </div>
+                <div id="list-scorers" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  <p class="text-xs text-slate-500 py-2">Sem gols cadastrados ainda.</p>
+                </div>
+                <div id="scorers-scroll-indicator-down" class="hidden pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-surface via-surface/80 to-transparent flex items-end justify-center pb-0.5 z-20 transition-opacity duration-300">
+                  <button type="button" onclick="scrollScorersListDown()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais artilheiros abaixo" aria-label="Rolar para ver mais artilheiros">
+                    <i data-lucide="chevron-down" class="w-6 h-6 stroke-[2.5]"></i>
+                  </button>
+                </div>
               </div>
             </div>
 
             <div class="pt-3 border-t border-borderLight/50">
-              <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">🏆 Mais Vitoriosos (Taxa de Vitória)</h4>
-              <div id="list-winners" class="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                <p class="text-xs text-slate-500 py-2">Sem jogos finalizados.</p>
+              <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">🏆 Mais Vitoriosos</h4>
+              <div class="relative">
+                <div id="winners-scroll-indicator-up" class="hidden pointer-events-none absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-surface via-surface/80 to-transparent flex items-start justify-center pt-0.5 z-20 transition-opacity duration-300">
+                  <button type="button" onclick="scrollWinnersListUp()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais vitoriosos acima" aria-label="Rolar para ver vitoriosos acima">
+                    <i data-lucide="chevron-up" class="w-6 h-6 stroke-[2.5]"></i>
+                  </button>
+                </div>
+                <div id="list-winners" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  <p class="text-xs text-slate-500 py-2">Sem jogos finalizados.</p>
+                </div>
+                <div id="winners-scroll-indicator-down" class="hidden pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-surface via-surface/80 to-transparent flex items-end justify-center pb-0.5 z-20 transition-opacity duration-300">
+                  <button type="button" onclick="scrollWinnersListDown()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais vitoriosos abaixo" aria-label="Rolar para ver mais vitoriosos">
+                    <i data-lucide="chevron-down" class="w-6 h-6 stroke-[2.5]"></i>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
+      </div>
+
+      <!-- Gráfico de Evolução e Desempenho Cronológico -->
+      <div id="chart-evolution-container" class="bg-surface border border-borderLight rounded-3xl p-6 space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-borderLight pb-4">
+          <div>
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="line-chart" class="w-5 h-5 text-neon-accent"></i>
+              <span>Evolução Cronológica de Desempenho</span>
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">Acompanhe a trajetória de gols, vitórias, aproveitamento e média de gols ao longo das rodadas</p>
+          </div>
+
+          <!-- Controles de Métrica e Filtro -->
+          <div class="flex flex-wrap items-center gap-3">
+            <!-- Seletor de Métrica (4 Opções) -->
+            <div class="inline-flex rounded-xl bg-card p-1 border border-borderLight text-xs font-semibold">
+              <button type="button" id="chart-metric-goals" onclick="setDashboardChartMetric('goals')" class="px-3 py-1.5 rounded-lg transition-all text-white bg-cardLight shadow-sm">
+                ⚽ Gols
+              </button>
+              <button type="button" id="chart-metric-wins" onclick="setDashboardChartMetric('wins')" class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+                🏆 Vitórias
+              </button>
+              <button type="button" id="chart-metric-consistency" onclick="setDashboardChartMetric('consistency')" class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+                📈 Aproveitamento (%)
+              </button>
+              <button type="button" id="chart-metric-avg-goals" onclick="setDashboardChartMetric('avg_goals')" class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+                🎯 Média de Gols
+              </button>
+            </div>
+
+            <!-- Filtro de Jogadores (Dropdown com Multi-seleção) -->
+            <div class="relative">
+              <button type="button" id="btn-chart-player-filter" onclick="togglePlayerFilterDropdown(event)" class="text-xs px-3.5 py-2 bg-card hover:bg-cardLight text-slate-200 border border-borderLight rounded-xl transition flex items-center gap-2 font-medium">
+                <i data-lucide="users" class="w-3.5 h-3.5 text-neon-accent"></i>
+                <span id="label-chart-player-filter">Todos os Jogadores</span>
+                <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i>
+              </button>
+
+              <!-- Dropdown Menu -->
+              <div id="chart-player-filter-menu" class="hidden absolute right-0 mt-2 w-64 max-h-72 bg-surface border border-borderLight rounded-2xl shadow-2xl p-3 z-30 space-y-2">
+                <div class="flex items-center justify-between pb-2 border-b border-borderLight text-xs">
+                  <span class="font-bold text-white">Filtrar Jogadores</span>
+                  <div class="flex gap-2">
+                    <button type="button" onclick="selectAllChartPlayers(true)" class="text-[11px] text-neon-accent hover:underline">Todos</button>
+                    <span class="text-slate-600">•</span>
+                    <button type="button" onclick="selectAllChartPlayers(false)" class="text-[11px] text-slate-400 hover:underline">Nenhum</button>
+                  </div>
+                </div>
+
+                <!-- Campo de busca rápida no dropdown -->
+                <div class="relative">
+                  <input type="text" id="chart-player-search" oninput="filterChartPlayerSearch(this.value)" placeholder="Buscar jogador..." class="w-full text-xs bg-card border border-borderLight rounded-lg px-2.5 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent" />
+                </div>
+
+                <!-- Lista de checkboxes dos jogadores -->
+                <div id="chart-player-checkboxes" class="max-h-40 overflow-y-auto space-y-1 pr-1">
+                  <!-- Inserido dinamicamente via JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Canvas do Gráfico -->
+        <div class="relative w-full h-[320px] sm:h-[360px] pt-2">
+          <canvas id="dashboard-evolution-chart"></canvas>
+          <div id="dashboard-chart-empty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center p-4 bg-surface/80 rounded-2xl">
+            <i data-lucide="bar-chart-2" class="w-10 h-10 text-slate-600 mb-2"></i>
+            <p class="text-sm font-semibold text-slate-300">Nenhum dado para exibir no gráfico</p>
+            <p class="text-xs text-slate-500 mt-1">Finalize partidas com jogadores escalados ou selecione jogadores no filtro.</p>
+          </div>
+        </div>
       </div>
 
       <!-- Histórico Completo de Partidas Gravadas -->
@@ -641,14 +921,42 @@
             </h3>
           </div>
 
-          <button onclick="limparHistorico()" class="admin-only text-xs px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition flex items-center gap-1 font-semibold">
-            <i data-lucide="trash" class="w-3.5 h-3.5"></i>
-            <span>Limpar histórico</span>
-          </button>
+          <div class="flex items-center gap-2">
+            <button id="btn-export-pdf" onclick="exportarRelatorioPDF()" disabled class="text-xs px-3.5 py-1.5 bg-neon-accent/15 hover:bg-neon-accent/25 text-neon-accent border border-neon-accent/40 rounded-xl transition flex items-center gap-1.5 font-semibold shadow-sm hover:shadow-neon-glow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-accent/15 disabled:hover:shadow-none" title="Nenhuma partida finalizada para gerar relatório">
+              <i data-lucide="file-down" class="w-3.5 h-3.5"></i>
+              <span id="btn-export-pdf-text">Gerar PDF</span>
+            </button>
+            <button id="btn-clear-history" onclick="limparHistorico()" disabled class="admin-only text-xs px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition flex items-center gap-1 font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-500/10" title="Nenhuma partida finalizada no histórico">
+              <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+              <span>Limpar histórico</span>
+            </button>
+          </div>
         </div>
 
-        <div id="history-matches-list" class="space-y-3">
-          <p class="text-sm text-slate-500 text-center py-8">Carregando histórico do banco de dados...</p>
+        <div class="relative overflow-hidden w-full">
+          <div id="history-slider" class="flex items-start will-change-transform" style="transform: translateX(0%); gap: 1.5rem;">
+            <div id="history-matches-list" class="w-full shrink-0 space-y-3">
+              <p class="text-sm text-slate-500 text-center py-8">Carregando histórico do banco de dados...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Controles de Paginação do Histórico -->
+        <div id="history-pagination" class="hidden flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-borderLight text-xs">
+          <div class="text-slate-400 font-medium text-center sm:text-left">
+            Mostrando <span id="history-page-range" class="font-bold text-white">0-0</span> de <span id="history-total-count" class="font-bold text-white">0</span> partidas
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="history-prev-btn" onclick="mudarPaginaHistorico(-1)" class="px-3 py-1.5 rounded-xl bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-semibold">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+              <span>Anterior</span>
+            </button>
+            <span id="history-page-indicator" class="px-2.5 py-1 text-slate-400 font-bold bg-pitch border border-borderLight rounded-lg">1 / 1</span>
+            <button id="history-next-btn" onclick="mudarPaginaHistorico(1)" class="px-3 py-1.5 rounded-xl bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-semibold">
+              <span>Próxima</span>
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -727,8 +1035,8 @@
               </div>
               <div class="space-y-1">
                 <h4 class="text-sm font-bold text-white flex items-center gap-2">
-                  <span>Pool de Peladas (Histórico em Corrente)</span>
-                  <span id="badge-pool-status" class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">1 Pelada</span>
+                  <span>Pool de Peladas</span>
+                  <span id="badge-pool-status" class="hidden text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30"></span>
                 </h4>
                 <p class="text-xs text-slate-400 leading-relaxed">
                   Conecte esta pelada a uma pelada anterior. O dashboard, artilharia e histórico irão se somar automaticamente em corrente ao longo do tempo.
@@ -760,40 +1068,60 @@
 
         <!-- Parâmetros da Pelada -->
         <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-          <div class="border-b border-borderLight pb-4">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-              <i data-lucide="sliders" class="w-5 h-5 text-neon-accent"></i>
-              <span>Regras e Parâmetros</span>
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">Ajuste os parâmetros padrão para o sorteio e cálculo das partidas.</p>
+          <div class="border-b border-borderLight pb-4 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <i data-lucide="sliders" class="w-5 h-5 text-neon-accent"></i>
+                <span>Regras e Parâmetros</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-1">Ajuste os parâmetros padrão para o sorteio e cálculo das partidas.</p>
+            </div>
+            <span class="text-[11px] font-semibold text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+              <i data-lucide="check-circle" class="w-3 h-3"></i>
+              <span>Salvamento automático</span>
+            </span>
           </div>
 
-          <form id="form-config" onsubmit="salvarConfiguracoes(event)" class="space-y-4">
+          <form id="form-config" onsubmit="event.preventDefault(); autoSalvarConfiguracoes();" class="space-y-4">
             
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">Jogadores por Time na Linha / Total</label>
-              <input type="number" id="cfg-players-per-team" min="2" max="11" value="5" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+              <input type="number" id="cfg-players-per-team" min="2" max="11" value="5" oninput="autoSalvarConfiguracoes()" onchange="autoSalvarConfiguracoes()" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
             </div>
 
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">Duração da Partida (minutos)</label>
-              <input type="number" id="cfg-duration" min="5" max="90" value="10" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+              <input type="number" id="cfg-duration" min="5" max="90" value="10" oninput="autoSalvarConfiguracoes()" onchange="autoSalvarConfiguracoes()" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Som do Alarme de Fim de Jogo</label>
+              <div class="flex items-center gap-2">
+                <select id="cfg-alarm-sound" onchange="aoMudarSomAlarme()" class="flex-1 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent truncate">
+                  <option value="standard-emergency-warning-signal.mp3">🚨 Alarme de Emergência Padrão</option>
+                  <option value="samsung-alarm-morning-flower.mp3">🌸 Samsung Morning Flower</option>
+                  <option value="this-is-the-end-adele.mp3">🎵 Adele - This is the End</option>
+                  <option value="end_Mz9V9Hh.mp3">⏱️ Fim de Partida (Game Over SFX)</option>
+                  <option value="electronic-alarm-clock-buzz-sfx-sound-effect-17-audiotrimmer.mp3">⏰ Despertador Digital (Buzzer)</option>
+                  <option value="alarm-danger-danger.mp3">⚠️ Alarme Danger Danger</option>
+                  <option value="police-alarm.mp3">🚓 Sirene Policial</option>
+                  <option value="warning-alarm-loud-af.mp3">🔊 Alerta de Aviso Loud</option>
+                </select>
+                <button type="button" id="btn-preview-alarm" onclick="testarSomAlarme()" title="Ouvir som do alarme" class="w-10 h-10 rounded-xl bg-cardLight border border-borderLight hover:border-neon-accent text-neon-accent flex items-center justify-center shrink-0 transition active:scale-95 shadow">
+                  <i id="icon-preview-alarm" data-lucide="play" class="w-4 h-4 fill-current"></i>
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-1">Toque no botão de play para testar o som do alarme.</p>
             </div>
 
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">Formato do Campeonato</label>
-              <select id="cfg-rounds" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+              <select id="cfg-rounds" onchange="autoSalvarConfiguracoes(true)" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
                 <option value="single">Turno Único (Todos contra todos uma vez)</option>
                 <option value="double">Turno e Returno (Ida e volta)</option>
                 <option value="custom">Livre (Crie as rodadas e partidas à vontade)</option>
               </select>
               <p class="text-[11px] text-slate-500 mt-1">No formato Livre, você monta os confrontos com os times e rodadas que quiser.</p>
-            </div>
-
-            <div class="pt-4 flex justify-end">
-              <button type="submit" id="btn-save-settings" class="admin-only glow-neon px-6 py-3 bg-neon-accent hover:bg-emerald-400 text-black font-bold text-sm rounded-xl transition">
-                Salvar Alterações
-              </button>
             </div>
           </form>
         </div>
@@ -891,7 +1219,7 @@
 
   <!-- Modal para Detalhes do Histórico ou Escalação -->
   <div id="modal-match-details" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-surface border border-borderLight rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+    <div class="bg-surface border border-borderLight rounded-3xl max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-2xl relative">
       <button onclick="closeModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
@@ -933,8 +1261,9 @@
   </div>
 
   <!-- Scripts da Aplicação -->
-  <script src="/static/audio.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/audit.js?v=1"></script>
+  <script src="/static/audio.js?v=4"></script>
+  <script src="/static/app.js?v=10"></script>
   <script>
     lucide.createIcons();
     // Registro do Service Worker para PWA

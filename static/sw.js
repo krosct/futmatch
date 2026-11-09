@@ -1,4 +1,4 @@
-const CACHE_NAME = 'futmatch-v2';
+const CACHE_NAME = 'futmatch-v15';
 const STATIC_ASSETS = [
   '/',
   '/static/index.html',
@@ -8,7 +8,10 @@ const STATIC_ASSETS = [
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
   '/static/icons/favicon.svg',
-  '/static/icons/apple-touch-icon.png'
+  '/static/icons/apple-touch-icon.png',
+  '/static/bg-pitch.jpg',
+  '/static/html2canvas.min.js',
+  '/static/jspdf.umd.min.js'
 ];
 
 self.addEventListener('install', (event) => {
