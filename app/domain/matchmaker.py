@@ -3,7 +3,7 @@ from typing import List, Tuple, Optional, Dict, Any
 from app.domain.models import Player, Team, Match
 
 COLOR_PALETTE = [
-    {"name": "Colete Verde", "color": "#10b981", "badge": "🟢"},
+    {"name": "Colete Verde", "color": "#84cc16", "badge": "🟢"},
     {"name": "Colete Laranja", "color": "#f97316", "badge": "🟠"},
     {"name": "Colete Azul", "color": "#3b82f6", "badge": "🔵"},
     {"name": "Colete Vermelho", "color": "#ef4444", "badge": "🔴"},

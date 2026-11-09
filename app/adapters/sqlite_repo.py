@@ -1,6 +1,6 @@
 import json
 import aiosqlite
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone, timedelta
 from app.domain.models import Match, SessionConfig, PeladaSession
 from app.ports.repository import MatchRepositoryPort
@@ -29,6 +29,11 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             # Migração caso a coluna parent_code não exista
             try:
                 await db.execute("ALTER TABLE peladas ADD COLUMN parent_code TEXT DEFAULT NULL")
+            except Exception:
+                pass
+            # Migração caso a coluna description não exista
+            try:
+                await db.execute("ALTER TABLE peladas ADD COLUMN description TEXT DEFAULT ''")
             except Exception:
                 pass
 
@@ -65,17 +70,27 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                     val TEXT
                 )
             """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS admin_tokens (
+                    token TEXT PRIMARY KEY,
+                    pelada_code TEXT NOT NULL,
+                    expires_at REAL NOT NULL
+                )
+            """)
             await db.commit()
 
-    async def create_pelada(self, code: str, password_hash: str, name: str = "Pelada dos Amigos") -> PeladaSession:
+    async def create_pelada(self, code: str, password_hash: str, name: str) -> PeladaSession:
         created_at = datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S")
+        clean_name = name.strip()
         default_config = {
             "players_per_team": 5,
             "match_duration_minutes": 10,
             "total_rounds": 1,
             "championship_type": "single",
             "points_win": 3,
-            "points_draw": 1
+            "points_draw": 1,
+            "alarm_sound": "standard-emergency-warning-signal.mp3"
         }
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
@@ -85,7 +100,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 code.upper(),
                 password_hash,
                 created_at,
-                name,
+                clean_name,
                 "[]",
                 "[]",
                 "[]",
@@ -97,12 +112,13 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             code=code.upper(),
             password_hash=password_hash,
             created_at=created_at,
-            name=name,
+            name=clean_name,
             players=[],
             teams=[],
             fixtures=[],
             config=default_config,
-            parent_code=None
+            parent_code=None,
+            description=""
         )
 
     async def get_pelada(self, code: str) -> Optional[PeladaSession]:
@@ -118,13 +134,23 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 code=row["code"],
                 password_hash=row["password_hash"],
                 created_at=row["created_at"],
-                name=row["name"] or "Pelada dos Amigos",
+                name=row["name"] or "",
                 players=json.loads(row["players"]) if row["players"] else [],
                 teams=json.loads(row["teams"]) if row["teams"] else [],
                 fixtures=json.loads(row["fixtures"]) if row["fixtures"] else [],
                 config=json.loads(row["config"]) if row["config"] else {},
-                parent_code=row["parent_code"] if "parent_code" in row.keys() and row["parent_code"] else None
+                parent_code=row["parent_code"] if "parent_code" in row.keys() and row["parent_code"] else None,
+                description=row["description"] if "description" in row.keys() and row["description"] else ""
             )
+
+    async def set_pelada_description(self, code: str, description: str) -> bool:
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "UPDATE peladas SET description = ? WHERE code = ?",
+                (description, code.upper())
+            )
+            await db.commit()
+            return cursor.rowcount > 0
 
     async def set_pelada_parent_code(self, code: str, parent_code: Optional[str]) -> bool:
         p_code = parent_code.upper().strip() if parent_code else None
@@ -421,7 +447,8 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             "top_scorers": top_scorers,
             "top_winners": top_winners,
             "leaderboard": leaderboard,
-            "recent_matches": [self._match_to_dict(m) for m in finished_matches[:8]]
+            "recent_matches": [self._match_to_dict(m) for m in finished_matches[:8]],
+            "all_matches": [self._match_to_dict(m) for m in finished_matches]
         }
 
 
@@ -462,5 +489,46 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             "is_draw": m.is_draw,
             "finished": m.finished,
             "played_at": m.played_at,
-            "notes": m.notes
+            "notes": m.notes,
+            "started_at": m.started_at,
+            "timer_status": m.timer_status,
+            "timer_elapsed_seconds": m.timer_elapsed_seconds,
+            "timer_updated_at": m.timer_updated_at
         }
+
+    async def save_admin_token(self, token: str, pelada_code: str, expires_at: float) -> None:
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT OR REPLACE INTO admin_tokens (token, pelada_code, expires_at)
+                VALUES (?, ?, ?)
+            """, (token, pelada_code.upper().strip(), expires_at))
+            await db.commit()
+
+    async def get_admin_token(self, token: str) -> Optional[Tuple[str, float]]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT pelada_code, expires_at FROM admin_tokens WHERE token = ?", (token,))
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            return (row["pelada_code"], float(row["expires_at"]))
+
+    async def delete_admin_token(self, token: str) -> None:
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM admin_tokens WHERE token = ?", (token,))
+            await db.commit()
+
+    async def load_all_admin_tokens(self) -> Dict[str, Tuple[str, float]]:
+        import time
+        now = time.time()
+        tokens: Dict[str, Tuple[str, float]] = {}
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            # Limpa expirados
+            await db.execute("DELETE FROM admin_tokens WHERE expires_at < ?", (now,))
+            await db.commit()
+            cursor = await db.execute("SELECT token, pelada_code, expires_at FROM admin_tokens")
+            rows = await cursor.fetchall()
+            for r in rows:
+                tokens[r["token"]] = (r["pelada_code"], float(r["expires_at"]))
+        return tokens

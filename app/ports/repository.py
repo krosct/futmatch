@@ -8,7 +8,7 @@ class MatchRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    async def create_pelada(self, code: str, password_hash: str, name: str = "Pelada dos Amigos") -> PeladaSession:
+    async def create_pelada(self, code: str, password_hash: str, name: str) -> PeladaSession:
         pass
 
     @abstractmethod
@@ -21,6 +21,10 @@ class MatchRepositoryPort(ABC):
 
     @abstractmethod
     async def set_pelada_parent_code(self, code: str, parent_code: Optional[str]) -> bool:
+        pass
+
+    @abstractmethod
+    async def set_pelada_description(self, code: str, description: str) -> bool:
         pass
 
     @abstractmethod
@@ -65,5 +69,21 @@ class MatchRepositoryPort(ABC):
 
     @abstractmethod
     async def get_config(self, pelada_code: Optional[str] = None) -> SessionConfig:
+        pass
+
+    @abstractmethod
+    async def save_admin_token(self, token: str, pelada_code: str, expires_at: float) -> None:
+        pass
+
+    @abstractmethod
+    async def get_admin_token(self, token: str) -> Optional[tuple[str, float]]:
+        pass
+
+    @abstractmethod
+    async def delete_admin_token(self, token: str) -> None:
+        pass
+
+    @abstractmethod
+    async def load_all_admin_tokens(self) -> Dict[str, tuple[str, float]]:
         pass
 

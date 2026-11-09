@@ -64,7 +64,7 @@ def test_balance_teams_empty_players():
 def test_generate_round_robin_fixtures():
     """Gera confrontos de todos contra todos corretamente."""
     teams = [
-        Team(id="t1", name="Time Verde", color="#10b981"),
+        Team(id="t1", name="Time Verde", color="#84cc16"),
         Team(id="t2", name="Time Azul", color="#3b82f6"),
         Team(id="t3", name="Time Vermelho", color="#ef4444"),
         Team(id="t4", name="Time Amarelo", color="#eab308")

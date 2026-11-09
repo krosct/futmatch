@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from httpx import AsyncClient
 
 async def test_security_headers_middleware(async_client: AsyncClient):
@@ -18,18 +19,35 @@ async def test_payload_size_limit(async_client: AsyncClient):
     assert res.status_code == 413
 
 async def test_create_pelada_flow(async_client: AsyncClient):
-    """Testa criação de pelada com e sem senha mestra."""
-    # Sem senha
+    """Testa criação de pelada com e sem senha mestra e validação de nome obrigatório."""
+    # Validação: nome vazio ou com menos de 3 caracteres deve falhar com 422
+    res_empty = await async_client.post("/api/peladas/create", json={"name": ""})
+    assert res_empty.status_code == 422
+
+    res_short = await async_client.post("/api/peladas/create", json={"name": "AB"})
+    assert res_short.status_code == 422
+
+    res_spaces = await async_client.post("/api/peladas/create", json={"name": "   "})
+    assert res_spaces.status_code == 422
+
+    # Senha mestra é obrigatória na criação
     res1 = await async_client.post("/api/peladas/create", json={"name": "Pelada Aberta"})
+    assert res1.status_code == 422
+    res_short_pwd = await async_client.post("/api/peladas/create", json={"name": "Pelada Aberta", "password": "ab"})
+    assert res_short_pwd.status_code == 422
+
+    res1 = await async_client.post("/api/peladas/create", json={"name": "Pelada Aberta", "password": "senha_aberta"})
     assert res1.status_code == 200
     d1 = res1.json()
-    assert d1["has_password"] is False
+    assert d1["name"] == "Pelada Aberta"
+    assert d1["has_password"] is True
     assert d1["admin_token"] != ""
 
     # Com senha
     res2 = await async_client.post("/api/peladas/create", json={"name": "Pelada Fechada", "password": "senha_mestra"})
     assert res2.status_code == 200
     d2 = res2.json()
+    assert d2["name"] == "Pelada Fechada"
     assert d2["has_password"] is True
     assert d2["admin_token"] != ""
 
@@ -129,3 +147,61 @@ async def test_audio_catalog_endpoint(async_client: AsyncClient):
     assert len(data["efeitos"]) > 0
     assert all(item.startswith("/static/music/") for item in data["abertura"])
     assert all(item.startswith("/static/sounds/") for item in data["efeitos"])
+
+async def test_duplicate_player_names_rejected(async_client: AsyncClient):
+    """Garante que a sincronização de estado rejeita jogadores com nomes duplicados."""
+    res_create = await async_client.post("/api/peladas/create", json={"name": "Pelada Unicidade", "password": "senha_teste"})
+    code = res_create.json()["code"]
+    token = res_create.json()["admin_token"]
+
+    duplicate_players = [
+        {"id": "p1", "name": "Neymar Jr", "level": 5, "is_goalkeeper": False},
+        {"id": "p2", "name": "neymar jr", "level": 4, "is_goalkeeper": False}
+    ]
+
+    res_sync = await async_client.post(
+        f"/api/peladas/{code}/sync-state",
+        json={"players": duplicate_players},
+        headers={"X-Admin-Token": token}
+    )
+    assert res_sync.status_code == 400
+    assert "Não é permitido adicionar jogadores duplicados" in res_sync.json()["detail"]
+
+async def test_broadcaster_pub_sub():
+    """Garante que o serviço broadcaster de pub/sub assíncrono entrega mensagens corretamente."""
+    from app.services.broadcaster import broadcaster
+    queue = await broadcaster.subscribe("TESTCODE")
+    try:
+        await broadcaster.broadcast("TESTCODE", "state_updated", {"teams": ["A", "B"]})
+        item = await asyncio.wait_for(queue.get(), timeout=1.0)
+        assert item["event"] == "state_updated"
+        assert item["pelada_code"] == "TESTCODE"
+        assert item["data"]["teams"] == ["A", "B"]
+    finally:
+        await broadcaster.unsubscribe("TESTCODE", queue)
+
+async def test_pelada_description_and_pool_start_date(async_client: AsyncClient):
+    """Descrição é salva pelo líder, aparece nas consultas e a data de início segue a pelada mais antiga da corrente."""
+    res_create = await async_client.post("/api/peladas/create", json={"name": "Pelada Teste", "password": "senha_teste"})
+    assert res_create.status_code == 200
+    data = res_create.json()
+    code = data["code"]
+    token = data["admin_token"]
+    assert data["description"] == ""
+    assert data["pool_started_at"]
+    assert data["has_password"] is True
+
+    # O líder (com token) salva a descrição
+    res_set = await async_client.post(f"/api/peladas/{code}/description", json={"description": "Quadra do parque"}, headers={"X-Admin-Token": token})
+    assert res_set.status_code == 200
+    assert res_set.json()["description"] == "Quadra do parque"
+
+    info = await async_client.get(f"/api/peladas/{code}")
+    assert info.json()["description"] == "Quadra do parque"
+    assert info.json()["pool_started_at"] == data["pool_started_at"]
+
+    # Espaços excessivos são normalizados e descrição longa é rejeitada
+    res_spaces = await async_client.post(f"/api/peladas/{code}/description", json={"description": "  Quadra   do  parque  "}, headers={"X-Admin-Token": token})
+    assert res_spaces.json()["description"] == "Quadra do parque"
+    res_long = await async_client.post(f"/api/peladas/{code}/description", json={"description": "A" * 141}, headers={"X-Admin-Token": token})
+    assert res_long.status_code == 422

@@ -108,3 +108,22 @@ async def test_session_config_persistence(temp_db: SQLiteMatchRepository):
     assert loaded.players_per_team == 6
     assert loaded.match_duration_minutes == 12
     assert loaded.championship_type == "double"
+
+async def test_admin_token_persistence(temp_db: SQLiteMatchRepository):
+    """Testa persistência, consulta e expiração de tokens administrativos no SQLite."""
+    import time
+    token = "token_teste_123"
+    expires = time.time() + 3600
+    await temp_db.save_admin_token(token, "PEL10", expires)
+
+    fetched = await temp_db.get_admin_token(token)
+    assert fetched is not None
+    assert fetched[0] == "PEL10"
+    assert fetched[1] == expires
+
+    all_tokens = await temp_db.load_all_admin_tokens()
+    assert token in all_tokens
+    assert all_tokens[token][0] == "PEL10"
+
+    await temp_db.delete_admin_token(token)
+    assert await temp_db.get_admin_token(token) is None

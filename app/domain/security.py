@@ -72,6 +72,13 @@ def cleanup_expired_tokens() -> None:
     for t in expired:
         ADMIN_TOKENS.pop(t, None)
 
+def sync_admin_tokens(tokens: Dict[str, Tuple[str, float]]) -> None:
+    """Sincroniza tokens persistidos para a memória RAM."""
+    now = time.time()
+    for t, (code, exp) in tokens.items():
+        if exp > now:
+            ADMIN_TOKENS[t] = (code.upper().strip(), exp)
+
 # ==========================================
 # RATE LIMITING (SLIDING WINDOW IN-MEMORY)
 # ==========================================

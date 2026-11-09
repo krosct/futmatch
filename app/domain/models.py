@@ -46,6 +46,10 @@ class Match:
     finished: bool = False
     played_at: Optional[str] = None  # ISO format string em UTC-3
     notes: str = ""
+    started_at: Optional[str] = None  # Horário de início ("HH:MM:SS" ou ISO em UTC-3)
+    timer_status: str = "stopped"  # "stopped", "running", "paused"
+    timer_elapsed_seconds: int = 0  # Segundos transcorridos acumulados
+    timer_updated_at: Optional[float] = None  # Timestamp unix do último play/pause
 
 @dataclass
 class SessionConfig:
@@ -55,17 +59,19 @@ class SessionConfig:
     championship_type: str = "single"  # "single" (Turno Único), "double" (Turno e Retorno), "custom" (Livre)
     points_win: int = 3
     points_draw: int = 1
+    alarm_sound: str = "standard-emergency-warning-signal.mp3"
 
 @dataclass
 class PeladaSession:
     code: str
     password_hash: str
     created_at: str
-    name: Optional[str] = "Pelada dos Amigos"
+    name: str
     players: List[Dict[str, Any]] = field(default_factory=list)
     teams: List[Dict[str, Any]] = field(default_factory=list)
     fixtures: List[Dict[str, Any]] = field(default_factory=list)
     config: Dict[str, Any] = field(default_factory=dict)
     parent_code: Optional[str] = None
+    description: str = ""
 
 
