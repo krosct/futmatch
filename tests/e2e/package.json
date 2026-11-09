@@ -1,0 +1,11 @@
+{
+  "name": "futmatch-e2e",
+  "private": true,
+  "description": "Testes E2E de navegador (Chrome instalado, via puppeteer-core). Requer o servidor rodando em BASE_URL.",
+  "scripts": {
+    "test": "node e2e.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "24.11.1"
+  }
+}

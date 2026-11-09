@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
-from app.domain.models import Match, Player, SessionConfig, PeladaSession
+from app.domain.models import Match, SessionConfig, PeladaSession
 
 class MatchRepositoryPort(ABC):
     @abstractmethod
@@ -32,43 +32,43 @@ class MatchRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    async def save_pelada_state(self, code: str, players: List[Dict[str, Any]], teams: List[Dict[str, Any]], fixtures: List[Dict[str, Any]], config: Dict[str, Any]) -> None:
+    async def save_pelada_state(self, code: str, players: List[Dict[str, Any]], teams: List[Dict[str, Any]], fixtures: List[Dict[str, Any]]) -> None:
         pass
 
     @abstractmethod
-    async def save_match(self, match: Match, pelada_code: Optional[str] = None) -> None:
+    async def save_match(self, match: Match, pelada_code: str) -> None:
         pass
 
     @abstractmethod
-    async def get_match(self, match_id: str, pelada_code: Optional[str] = None) -> Optional[Match]:
+    async def get_match(self, match_id: str, pelada_code: str) -> Optional[Match]:
         pass
 
     @abstractmethod
-    async def list_matches(self, limit: int = 100, pelada_code: Optional[str] = None) -> List[Match]:
+    async def list_matches(self, pelada_code: str, limit: int = 100) -> List[Match]:
         pass
 
     @abstractmethod
-    async def delete_all_matches(self, pelada_code: Optional[str] = None) -> None:
+    async def delete_all_matches(self, pelada_code: str) -> None:
         pass
 
     @abstractmethod
-    async def delete_match(self, match_id: str, pelada_code: Optional[str] = None) -> bool:
+    async def delete_match(self, match_id: str, pelada_code: str) -> bool:
         pass
 
     @abstractmethod
-    async def get_dashboard_metrics(self, pelada_code: Optional[str] = None) -> Dict[str, Any]:
+    async def get_dashboard_metrics(self, pelada_code: str) -> Dict[str, Any]:
         pass
 
     @abstractmethod
-    async def get_players_stats(self, pelada_code: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    async def get_players_stats(self, pelada_code: str) -> Dict[str, Dict[str, Any]]:
         pass
 
     @abstractmethod
-    async def save_config(self, config: SessionConfig, pelada_code: Optional[str] = None) -> None:
+    async def save_config(self, config: SessionConfig, pelada_code: str) -> None:
         pass
 
     @abstractmethod
-    async def get_config(self, pelada_code: Optional[str] = None) -> SessionConfig:
+    async def get_config(self, pelada_code: str) -> SessionConfig:
         pass
 
     @abstractmethod
@@ -84,6 +84,9 @@ class MatchRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    async def load_all_admin_tokens(self) -> Dict[str, tuple[str, float]]:
+    async def delete_admin_tokens_for_pelada(self, pelada_code: str) -> None:
         pass
 
+    @abstractmethod
+    async def load_all_admin_tokens(self) -> Dict[str, tuple[str, float]]:
+        pass

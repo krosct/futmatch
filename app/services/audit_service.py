@@ -1,36 +1,65 @@
 import asyncio
 import logging
+import time
 from typing import List, Optional
 from app.domain.audit import AuditEvent
 from app.ports.audit import AuditRepositoryPort
 
 logger = logging.getLogger(__name__)
 
+RETENTION_CHECK_INTERVAL_SECONDS = 3600.0
+
+
 class AuditService:
-    def __init__(self, repo: AuditRepositoryPort, batch_interval_seconds: float = 1.0, max_batch_size: int = 50):
+    def __init__(
+        self,
+        repo: AuditRepositoryPort,
+        batch_interval_seconds: float = 1.0,
+        max_batch_size: int = 50,
+        retention_days: int = 30,
+    ):
         self.repo = repo
         self.batch_interval = batch_interval_seconds
         self.max_batch_size = max_batch_size
+        self.retention_days = retention_days
         self.queue: asyncio.Queue[AuditEvent] = asyncio.Queue()
         self._worker_task: Optional[asyncio.Task] = None
+        self._retention_task: Optional[asyncio.Task] = None
         self._running = False
 
     async def start(self) -> None:
         if not self._running:
             self._running = True
             await self.repo.init_audit_db()
+            await self.purge_expired()
             self._worker_task = asyncio.create_task(self._process_queue())
+            self._retention_task = asyncio.create_task(self._retention_loop())
 
     async def stop(self) -> None:
         self._running = False
-        if self._worker_task:
-            self._worker_task.cancel()
-            try:
-                await self._worker_task
-            except asyncio.CancelledError:
-                pass
+        for task in (self._worker_task, self._retention_task):
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         # Flush remaining events in queue
         await self._flush_remaining()
+
+    async def purge_expired(self) -> int:
+        """Apaga eventos mais antigos que a retenção configurada (LGPD: dado pessoal não deve durar indefinidamente)."""
+        cutoff = time.time() - self.retention_days * 86400
+        try:
+            return await self.repo.purge_older_than(cutoff)
+        except Exception as e:
+            logger.error(f"Erro ao aplicar retenção de auditoria: {e}")
+            return 0
+
+    async def _retention_loop(self) -> None:
+        while self._running:
+            await asyncio.sleep(RETENTION_CHECK_INTERVAL_SECONDS)
+            await self.purge_expired()
 
     def record_event(self, event: AuditEvent) -> None:
         """Adiciona o evento à fila em memória de forma não-bloqueante."""

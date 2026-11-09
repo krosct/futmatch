@@ -111,6 +111,13 @@ class SQLiteAuditRepository(AuditRepositoryPort):
                     ))
                 return results
 
+    async def purge_older_than(self, created_at_ts: float) -> int:
+        """Remove eventos anteriores ao timestamp informado e retorna quantos foram apagados."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("DELETE FROM audit_logs WHERE created_at_ts < ?", (created_at_ts,))
+            await db.commit()
+            return cursor.rowcount
+
     async def count_audit_logs(self, pelada_code: Optional[str] = None) -> int:
         query = "SELECT COUNT(*) FROM audit_logs"
         params = []

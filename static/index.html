@@ -16,277 +16,29 @@
   <meta name="apple-mobile-web-app-title" content="FutMatch">
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- Chart.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Canvas Confetti CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- Tailwind compilado localmente (configuração em tailwind.config.js) -->
+  <link rel="stylesheet" href="/static/css/tailwind.css">
+  <!-- Fonte Outfit hospedada localmente (sem chamadas ao Google Fonts) -->
+  <link rel="stylesheet" href="/static/vendor/fonts.css">
+  <!-- Bibliotecas servidas pelo próprio app (sem CDN) -->
+  <script src="/static/vendor/lucide.min.js"></script>
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <script src="/static/vendor/confetti.browser.min.js"></script>
   <!-- Bibliotecas para Geração de PDF de Alta Fidelidade (html2canvas 1.4.1 + jsPDF 2.5.1) -->
   <script src="/static/html2canvas.min.js"></script>
   <script src="/static/jspdf.umd.min.js"></script>
 
-  <!-- Google Fonts: Outfit -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Outfit', 'sans-serif'],
-          },
-          colors: {
-            pitch: '#080c14',
-            surface: '#111827',
-            card: '#162032',
-            cardLight: '#1e293b',
-            borderLight: '#26354a',
-            neon: {
-              green: '#10b981',
-              emerald: '#059669',
-              accent: '#00f59b',
-              glow: '#10b98133',
-            }
-          }
-        }
-      }
-    }
-  </script>
 
-  <style>
-    /* Ocultar barra de rolagem visualmente em todo o documento e containers internos, mantendo o scroll funcional */
-    html, body {
-      scrollbar-width: none; /* Firefox */
-      -ms-overflow-style: none; /* IE e Edge legado */
-    }
-    html::-webkit-scrollbar,
-    body::-webkit-scrollbar {
-      display: none;
-      width: 0;
-      height: 0;
-    }
-
-    /* Ocultar barra de rolagem em todos os elementos com scroll mantendo a rolagem */
-    .overflow-y-auto,
-    .overflow-x-auto,
-    .overflow-auto,
-    [class*="overflow-y-"],
-    [class*="overflow-x-"] {
-      scrollbar-width: none !important;
-      -ms-overflow-style: none !important;
-    }
-    .overflow-y-auto::-webkit-scrollbar,
-    .overflow-x-auto::-webkit-scrollbar,
-    .overflow-auto::-webkit-scrollbar,
-    [class*="overflow-y-"]::-webkit-scrollbar,
-    [class*="overflow-x-"]::-webkit-scrollbar {
-      display: none !important;
-      width: 0 !important;
-      height: 0 !important;
-    }
-
-    /* Custom Scrollbars fallback */
-    ::-webkit-scrollbar { display: none; width: 0; height: 0; }
-
-    .glow-neon {
-      box-shadow: 0 0 25px rgba(0, 245, 155, 0.25);
-    }
-    .badge-gk {
-      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    }
-
-    /* Container de abas com deslocamento contínuo (estilo carrossel/slide com respiro elegante) */
-    :root {
-      --tab-gap: 48px;
-      --active-tab-index: 0;
-    }
-
-    #tab-viewport {
-      width: 100%;
-      overflow-x: hidden;
-      position: relative;
-    }
-
-    #tabs-slider {
-      display: flex;
-      align-items: flex-start;
-      gap: var(--tab-gap);
-      width: calc(400% + (3 * var(--tab-gap)));
-      transform: translateX(calc(-1 * var(--active-tab-index) * ((100% - 3 * var(--tab-gap)) / 4 + var(--tab-gap))));
-      transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
-      will-change: transform;
-    }
-
-    .tab-slide-pane {
-      /* Cada painel ocupa exatamente a largura total visível do container viewport */
-      width: calc((100% - (3 * var(--tab-gap))) / 4);
-      flex-shrink: 0;
-      min-width: 0;
-      transition: opacity 0.25s ease;
-    }
-
-    /* Painéis inativos em repouso não acumulam altura fantasma nem focam */
-    .tab-slide-pane.tab-inactive {
-      height: 0;
-      overflow: hidden;
-      opacity: 0;
-      pointer-events: none;
-      visibility: hidden;
-    }
-
-    /* Menu inferior mobile 100% fixo com isolamento de camada e área segura */
-    #mobile-bottom-nav {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 50;
-      transform: translateZ(0);
-      -webkit-transform: translateZ(0);
-      padding-bottom: env(safe-area-inset-bottom, 0.5rem);
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      #tabs-slider {
-        transition: none !important;
-      }
-    }
-
-    /* Estilo de Confronto / Combate de Aço Brutal para VS */
-    .vs-silver-metal {
-      display: inline-block;
-      line-height: 1.15;
-      padding: 2px 4px;
-      overflow: visible;
-      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 32%, #64748b 68%, #94a3b8 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 10px rgba(148, 163, 184, 0.4));
-      transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), filter 0.2s ease;
-    }
-
-    /* Estilo Gravado / Cravado de Partida Finalizada com Frisos Metálicos */
-    .match-finished-carved {
-      background: linear-gradient(180deg, #475569 0%, #94a3b8 45%, #cbd5e1 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      filter: drop-shadow(0 -1.5px 1px #000000) drop-shadow(0 1px 1px rgba(255, 255, 255, 0.4));
-      letter-spacing: 0.25em;
-    }
-
-    .match-finished-groove-left {
-      height: 1.5px;
-      background: linear-gradient(to right, transparent, #64748b 80%, #94a3b8);
-      box-shadow: 0 1px 1px rgba(255, 255, 255, 0.25);
-    }
-
-    .match-finished-groove-right {
-      height: 1.5px;
-      background: linear-gradient(to left, transparent, #64748b 80%, #94a3b8);
-      box-shadow: 0 1px 1px rgba(255, 255, 255, 0.25);
-    }
-
-    .vs-btn-active:hover .vs-silver-metal {
-      transform: scale(1.1);
-      filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.6)) drop-shadow(0 2px 6px rgba(0,0,0,0.9));
-    }
-
-    .vs-btn-active:active .vs-silver-metal {
-      transform: scale(0.92);
-    }
-
-    @keyframes gentleFloatBounceDown {
-      0%, 100% {
-        transform: translateY(0);
-        opacity: 0.7;
-      }
-      50% {
-        transform: translateY(6px);
-        opacity: 1;
-      }
-    }
-
-    @keyframes gentleFloatBounceUp {
-      0%, 100% {
-        transform: translateY(0);
-        opacity: 0.7;
-      }
-      50% {
-        transform: translateY(-6px);
-        opacity: 1;
-      }
-    }
-
-    .scroll-indicator-bounce-down {
-      animation: gentleFloatBounceDown 2.4s ease-in-out infinite;
-    }
-
-    .scroll-indicator-bounce-up {
-      animation: gentleFloatBounceUp 2.4s ease-in-out infinite;
-    }
-
-    @keyframes vsPulseBorder {
-      0%, 100% { transform: scale(1); opacity: 0.8; }
-      50% { transform: scale(1.04); opacity: 1; }
-    }
-
-    .timer-running-pulse {
-      animation: vsPulseBorder 2s ease-in-out infinite;
-    }
-
-    /* Banner da pelada: degradê neon da esquerda para a direita com brilho pulsante */
-    .pelada-banner {
-      position: relative;
-      overflow: hidden;
-      background:
-        radial-gradient(circle at 100% 50%, rgba(0, 245, 155, 0.38), transparent 45%),
-        linear-gradient(90deg, rgba(0, 245, 155, 0.18), rgba(22, 32, 50, 0.6) 60%, #162032);
-      animation: peladaBannerPulse 3s ease-in-out infinite;
-    }
-    .pelada-banner::after {
-      content: "";
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, #00f59b, transparent);
-      opacity: 0.8;
-      pointer-events: none;
-    }
-    .pelada-banner > * {
-      position: relative;
-      z-index: 1;
-    }
-    /* Selo de partidas pendentes sobre a aba ativa (fundo verde): mantém o número legível */
-    .nav-tab.active #badge-pending-matches {
-      background-color: rgba(0, 0, 0, 0.22);
-      color: #000;
-    }
-    @keyframes peladaBannerPulse {
-      0%, 100% { box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.3), 0 0 18px -6px rgba(0, 245, 155, 0.25); }
-      50% { box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.55), 0 0 34px -4px rgba(0, 245, 155, 0.45); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .pelada-banner {
-        animation: none;
-        box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.3);
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/ds.css">
 </head>
 
 <body class="bg-pitch text-slate-100 min-h-screen flex flex-col font-sans selection:bg-neon-accent selection:text-black antialiased relative">
 
   <!-- Imagem de Fundo Global da Aplicação (10% menor de opacidade em relação à landing) -->
   <div id="global-bg" class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-    <img src="https://images.unsplash.com/photo-1522778119026-d647f0596c20?auto=format&fit=crop&w=2000&q=80" 
+    <img src="/static/img/hero-pitch.jpg" 
          alt="" 
          class="w-full h-full object-cover object-center filter brightness-50 contrast-125 saturate-120 opacity-90">
     <div class="absolute inset-0 bg-gradient-to-t from-pitch via-pitch/80 to-pitch/60"></div>
@@ -299,7 +51,7 @@
   <div id="landing-screen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-pitch overflow-y-auto">
     <!-- Imagem de fundo empolgante com overlay escuro -->
     <div class="absolute inset-0 z-0">
-      <img src="https://images.unsplash.com/photo-1522778119026-d647f0596c20?auto=format&fit=crop&w=2000&q=80" 
+      <img src="/static/img/hero-pitch.jpg" 
            alt="Estádio e Gramado de Futebol" 
            class="w-full h-full object-cover object-center filter brightness-50 contrast-125 saturate-120">
       <div class="absolute inset-0 bg-gradient-to-t from-pitch via-pitch/80 to-pitch/60"></div>
@@ -338,9 +90,9 @@
           </div>
 
           <div class="mt-4 flex flex-col sm:flex-row gap-2.5">
-            <input type="text" id="input-new-pelada-name" placeholder="Nome da pelada" minlength="3" maxlength="40" required onkeydown="if(event.key==='Enter') criarNovaPelada()" class="flex-1 min-w-0 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
-            <input type="password" id="input-create-pelada-password" placeholder="Senha mestra" minlength="3" maxlength="64" autocomplete="new-password" required onkeydown="if(event.key==='Enter') criarNovaPelada()" class="flex-1 min-w-0 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
-            <button onclick="criarNovaPelada()" id="btn-create-pelada" class="glow-neon px-5 py-2.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap">
+            <input type="text" id="input-new-pelada-name" placeholder="Nome da pelada" minlength="3" maxlength="40" required data-h-keydown="criarNovaPelada" data-k="Enter" class="flex-1 min-w-0 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
+            <input type="password" id="input-create-pelada-password" placeholder="Senha mestra" minlength="3" maxlength="64" autocomplete="new-password" required data-h-keydown="criarNovaPelada" data-k="Enter" class="flex-1 min-w-0 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
+            <button data-h-click="criarNovaPelada" id="btn-create-pelada" class="glow-neon px-5 py-2.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap">
               <i data-lucide="sparkles" class="w-4 h-4"></i>
               <span>Criar Pelada</span>
             </button>
@@ -366,8 +118,8 @@
           </div>
 
           <div class="mt-4 flex flex-col sm:flex-row gap-2.5">
-            <input type="text" id="input-join-code" placeholder="Código (ex: A8F2K)" maxlength="5" uppercase onkeydown="if(event.key==='Enter') entrarNaPelada()" class="uppercase tracking-widest text-center font-mono font-bold bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-400">
-            <button onclick="entrarNaPelada()" id="btn-join-pelada" class="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap shadow-lg shadow-blue-500/20">
+            <input type="text" id="input-join-code" placeholder="Código (ex: A8F2K)" maxlength="5" uppercase data-h-keydown="entrarNaPelada" data-k="Enter" class="uppercase tracking-widest text-center font-mono font-bold bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-400">
+            <button data-h-click="entrarNaPelada" id="btn-join-pelada" class="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 whitespace-nowrap shadow-lg shadow-blue-500/20">
               <i data-lucide="arrow-right" class="w-4 h-4"></i>
               <span>Entrar como Espectador</span>
             </button>
@@ -391,7 +143,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3 min-h-16">
       
       <!-- Logo, Branding & Status da Pelada -->
-      <div class="flex items-center space-x-3 cursor-pointer select-none flex-shrink-0" onclick="switchTab('matchmaker')">
+      <div class="flex items-center space-x-3 cursor-pointer select-none flex-shrink-0" data-h-click="switchTab" data-a='["matchmaker"]'>
         <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-neon-accent flex items-center justify-center text-black font-black text-xl shadow-lg shadow-emerald-900/40">
           ⚽
         </div>
@@ -401,7 +153,7 @@
             <span class="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 leading-none">PRO</span>
           </div>
           <div class="flex items-center gap-1.5 mt-1">
-            <span id="current-pelada-code-display" class="inline-flex items-center justify-center h-5 font-mono text-[10px] font-bold text-neon-accent bg-emerald-950/70 border border-emerald-500/30 px-2 rounded-md cursor-pointer select-none hover:bg-emerald-900/80 transition leading-none flex-shrink-0" onclick="copiarCodigoPelada()" title="Clique para copiar código">#-----</span>
+            <span id="current-pelada-code-display" class="inline-flex items-center justify-center h-5 font-mono text-[10px] font-bold text-neon-accent bg-emerald-950/70 border border-emerald-500/30 px-2 rounded-md cursor-pointer select-none hover:bg-emerald-900/80 transition leading-none flex-shrink-0" data-h-click="copiarCodigoPelada" title="Clique para copiar código">#-----</span>
             <span id="role-badge" class="inline-flex items-center justify-center h-5 text-[10px] font-bold px-1.5 sm:px-2 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 gap-1 leading-none flex-shrink-0">
               <i data-lucide="eye" class="w-2.5 h-2.5"></i>
               <span>Espectador</span>
@@ -414,20 +166,20 @@
       <nav class="hidden lg:flex items-center space-x-1 bg-pitch/80 p-1 rounded-xl border border-borderLight flex-shrink-0 relative">
         <!-- Indicador deslizante da aba selecionada (posicionado por atualizarIndicadorNav) -->
         <span id="nav-tab-pill" aria-hidden="true" class="absolute left-0 top-0 rounded-lg bg-neon-accent shadow-sm pointer-events-none transition-all duration-300 ease-out opacity-0"></span>
-        <button onclick="switchTab('matchmaker')" id="tab-btn-matchmaker" class="nav-tab active relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-black">
+        <button data-h-click="switchTab" data-a='["matchmaker"]' id="tab-btn-matchmaker" class="nav-tab active relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-black">
           <i data-lucide="users" class="w-3.5 h-3.5 pointer-events-none"></i>
           <span class="pointer-events-none">Jogadores & Times</span>
         </button>
-        <button onclick="switchTab('fixtures')" id="tab-btn-fixtures" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
+        <button data-h-click="switchTab" data-a='["fixtures"]' id="tab-btn-fixtures" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
           <i data-lucide="trophy" class="w-3.5 h-3.5 pointer-events-none"></i>
           <span class="pointer-events-none">Jogos da Rodada</span>
           <span id="badge-pending-matches" class="hidden text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold pointer-events-none">0</span>
         </button>
-        <button onclick="switchTab('dashboard')" id="tab-btn-dashboard" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
+        <button data-h-click="switchTab" data-a='["dashboard"]' id="tab-btn-dashboard" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
           <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 pointer-events-none"></i>
           <span class="pointer-events-none">Dashboard & Histórico</span>
         </button>
-        <button onclick="switchTab('settings')" id="tab-btn-settings" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
+        <button data-h-click="switchTab" data-a='["settings"]' id="tab-btn-settings" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
           <i data-lucide="sliders" class="w-3.5 h-3.5 pointer-events-none"></i>
           <span class="pointer-events-none">Configurações</span>
         </button>
@@ -435,13 +187,13 @@
 
       <!-- Action Buttons -->
       <div class="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0 ml-auto lg:ml-0">
-        <button onclick="toggleSoundMute()" id="btn-toggle-sound" title="Alternar Som (Mudo / Ativado)" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-neon-accent/50 text-slate-300 hover:text-neon-accent rounded-lg text-xs font-semibold transition" aria-label="Alternar Som">
+        <button data-h-click="toggleSoundMute" id="btn-toggle-sound" title="Alternar Som (Mudo / Ativado)" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-neon-accent/50 text-slate-300 hover:text-neon-accent rounded-lg text-xs font-semibold transition" aria-label="Alternar Som">
           <i id="sound-toggle-icon" data-lucide="volume-2" class="w-4 h-4 text-neon-accent"></i>
         </button>
-        <button onclick="copiarLinkPelada()" title="Copiar link da pelada para compartilhar" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-neon-accent/50 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition" aria-label="Compartilhar link da pelada">
+        <button data-h-click="copiarLinkPelada" title="Copiar link da pelada para compartilhar" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-neon-accent/50 text-slate-300 hover:text-white rounded-lg text-xs font-semibold transition" aria-label="Compartilhar link da pelada">
           <i data-lucide="share-2" class="w-4 h-4 text-neon-accent"></i>
         </button>
-        <button onclick="sairPelada()" title="Trocar de Pelada / Voltar ao Início" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-rose-500/50 text-slate-300 hover:text-rose-400 rounded-lg text-xs font-semibold transition" aria-label="Sair da pelada">
+        <button data-h-click="sairPelada" title="Trocar de Pelada / Voltar ao Início" class="flex items-center justify-center p-1.5 sm:p-2 bg-card border border-borderLight hover:border-rose-500/50 text-slate-300 hover:text-rose-400 rounded-lg text-xs font-semibold transition" aria-label="Sair da pelada">
           <i data-lucide="log-out" class="w-4 h-4"></i>
         </button>
       </div>
@@ -450,20 +202,20 @@
 
   <!-- Mobile Tab Bar (Bottom Navigation) -->
   <nav id="mobile-bottom-nav" class="hidden lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/95 backdrop-blur-md border-t border-borderLight px-2 py-1.5 flex items-center justify-around shadow-2xl safe-area-bottom">
-    <button onclick="switchTab('matchmaker')" id="tab-btn-mobile-matchmaker" class="p-2 text-xs flex flex-col items-center text-neon-accent font-medium transition-colors duration-150">
+    <button data-h-click="switchTab" data-a='["matchmaker"]' id="tab-btn-mobile-matchmaker" class="p-2 text-xs flex flex-col items-center text-neon-accent font-medium transition-colors duration-150">
       <i data-lucide="users" class="w-5 h-5 mb-1 pointer-events-none"></i>
       <span class="pointer-events-none">Times</span>
     </button>
-    <button onclick="switchTab('fixtures')" id="tab-btn-mobile-fixtures" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150 relative">
+    <button data-h-click="switchTab" data-a='["fixtures"]' id="tab-btn-mobile-fixtures" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150 relative">
       <i data-lucide="trophy" class="w-5 h-5 mb-1 pointer-events-none"></i>
       <span class="pointer-events-none">Jogos</span>
       <span id="badge-pending-matches-mobile" class="hidden absolute top-1 right-2 text-[10px] bg-emerald-500/20 text-emerald-300 px-1 rounded-full font-bold pointer-events-none">0</span>
     </button>
-    <button onclick="switchTab('dashboard')" id="tab-btn-mobile-dashboard" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150">
+    <button data-h-click="switchTab" data-a='["dashboard"]' id="tab-btn-mobile-dashboard" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150">
       <i data-lucide="bar-chart-3" class="w-5 h-5 mb-1 pointer-events-none"></i>
       <span class="pointer-events-none">Métricas</span>
     </button>
-    <button onclick="switchTab('settings')" id="tab-btn-mobile-settings" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150">
+    <button data-h-click="switchTab" data-a='["settings"]' id="tab-btn-mobile-settings" class="p-2 text-xs flex flex-col items-center text-slate-400 hover:text-white font-medium transition-colors duration-150">
       <i data-lucide="sliders" class="w-5 h-5 mb-1 pointer-events-none"></i>
       <span class="pointer-events-none">Ajustes</span>
     </button>
@@ -490,7 +242,7 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-          <button id="btn-quick-start" onclick="inicioRapido()" title="Início rápido" class="admin-only glow-neon flex items-center space-x-2 px-6 py-3.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold rounded-2xl transition shadow-lg text-sm active:scale-95">
+          <button id="btn-quick-start" data-h-click="inicioRapido" title="Início rápido" class="admin-only glow-neon flex items-center space-x-2 px-6 py-3.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold rounded-2xl transition shadow-lg text-sm active:scale-95">
             <i data-lucide="zap" class="w-5 h-5"></i>
             <span>Início rápido</span>
           </button>
@@ -511,7 +263,7 @@
               <p class="text-xs text-slate-400">Total: <span id="count-players" class="text-neon-accent font-bold">0</span> confirmados</p>
             </div>
             
-            <button onclick="clearPlayers()" class="admin-only text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 transition">
+            <button data-h-click="clearPlayers" class="admin-only text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1 transition">
               <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
               <span>Limpar</span>
             </button>
@@ -521,9 +273,9 @@
           <div class="space-y-3 admin-only">
             <div class="flex gap-2">
               <input id="input-player-name" type="text" placeholder="Nome do jogador..." 
-                onkeydown="if(event.key==='Enter') addSinglePlayer()"
+                data-h-keydown="addSinglePlayer" data-k="Enter"
                 class="flex-1 min-w-0 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent focus:ring-1 focus:ring-neon-accent transition placeholder:text-slate-500">
-              <button onclick="addSinglePlayer()" class="shrink-0 whitespace-nowrap px-4 py-2.5 bg-cardLight hover:bg-neon-accent hover:text-black font-semibold rounded-xl text-sm transition">
+              <button data-h-click="addSinglePlayer" class="shrink-0 whitespace-nowrap px-4 py-2.5 bg-cardLight hover:bg-neon-accent hover:text-black font-semibold rounded-xl text-sm transition">
                 + Adicionar
               </button>
             </div>
@@ -558,7 +310,7 @@
               </summary>
               <div class="mt-3 space-y-2">
                 <textarea id="bulk-players-text" rows="4" placeholder="Cole os nomes, um por linha. Ex:&#10;1. Lucas (G) 4&#10;2. Marcelo 5&#10;3. Pedrinho 3&#10;4. Matheus Felipe (G) 2..." class="w-full bg-pitch border border-borderLight rounded-xl p-3 text-xs text-white focus:outline-none focus:border-neon-accent font-mono"></textarea>
-                <button onclick="importBulkPlayers()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold transition">
+                <button data-h-click="importBulkPlayers" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold transition">
                   Carregar Nomes da Lista
                 </button>
               </div>
@@ -569,7 +321,7 @@
           <div class="relative">
             <!-- Indicador sutil de scroll para cima com animação suave (sem círculo e sem sombra) -->
             <div id="players-scroll-indicator-up" class="hidden pointer-events-none absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-surface via-surface/80 to-transparent flex items-start justify-center pt-1 z-20 transition-opacity duration-300">
-              <button type="button" onclick="scrollPlayersListUp()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais jogadores acima" aria-label="Rolar para ver jogadores acima">
+              <button type="button" data-h-click="scrollPlayersListUp" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais jogadores acima" aria-label="Rolar para ver jogadores acima">
                 <i data-lucide="chevron-up" class="w-7 h-7 stroke-[2.5]"></i>
               </button>
             </div>
@@ -582,7 +334,7 @@
 
             <!-- Indicador sutil de scroll para baixo com animação suave (sem círculo e sem sombra) -->
             <div id="players-scroll-indicator" class="hidden pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-surface via-surface/80 to-transparent flex items-end justify-center pb-1 z-20 transition-opacity duration-300">
-              <button type="button" onclick="scrollPlayersListDown()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais jogadores abaixo" aria-label="Rolar para ver mais jogadores">
+              <button type="button" data-h-click="scrollPlayersListDown" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais jogadores abaixo" aria-label="Rolar para ver mais jogadores">
                 <i data-lucide="chevron-down" class="w-7 h-7 stroke-[2.5]"></i>
               </button>
             </div>
@@ -611,10 +363,10 @@
               </div>
 
               <div class="flex items-center gap-2">
-                <button onclick="sortearTimes()" id="btn-balance-teams" title="Equilibrar times & sorteio" aria-label="Equilibrar times & sorteio" class="admin-only w-9 h-9 bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+                <button data-h-click="sortearTimes" id="btn-balance-teams" title="Equilibrar times & sorteio" aria-label="Equilibrar times & sorteio" class="admin-only w-9 h-9 bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
                   <i data-lucide="dices" class="w-4 h-4"></i>
                 </button>
-                <button onclick="adicionarTimeManual()" id="btn-add-team" title="Adicionar time" aria-label="Adicionar time" class="admin-only w-9 h-9 bg-neon-accent hover:bg-emerald-400 text-black font-bold rounded-xl transition flex items-center justify-center shadow active:scale-95">
+                <button data-h-click="adicionarTimeManual" id="btn-add-team" title="Adicionar time" aria-label="Adicionar time" class="admin-only w-9 h-9 bg-neon-accent hover:bg-emerald-400 text-black font-bold rounded-xl transition flex items-center justify-center shadow active:scale-95">
                   <i data-lucide="plus" class="w-4 h-4"></i>
                 </button>
               </div>
@@ -653,14 +405,14 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <button id="btn-add-custom-match" onclick="abrirModalNovaPartida()" title="Nova Partida" aria-label="Nova Partida" class="admin-only w-9 h-9 bg-neon-accent hover:bg-emerald-400 text-black font-bold rounded-xl transition flex items-center justify-center shadow active:scale-95">
+          <button id="btn-add-custom-match" data-h-click="abrirModalNovaPartida" title="Nova Partida" aria-label="Nova Partida" class="admin-only w-9 h-9 bg-neon-accent hover:bg-emerald-400 text-black font-bold rounded-xl transition flex items-center justify-center shadow active:scale-95">
             <i data-lucide="plus-circle" class="w-4 h-4"></i>
           </button>
-          <button id="btn-recreate-fixtures" onclick="gerarTabelaConfrontos()" title="Recriar Tabela" aria-label="Recriar Tabela" class="admin-only w-9 h-9 bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+          <button id="btn-recreate-fixtures" data-h-click="gerarTabelaConfrontos" title="Recriar Tabela" aria-label="Recriar Tabela" class="admin-only w-9 h-9 bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
             <i data-lucide="refresh-cw" class="w-4 h-4"></i>
             <span id="btn-fixtures-action-label" class="sr-only">Recriar Tabela</span>
           </button>
-          <button id="btn-clear-fixtures" onclick="limparTodasRodadas()" title="Limpar Rodadas" aria-label="Limpar Rodadas" class="admin-only w-9 h-9 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+          <button id="btn-clear-fixtures" data-h-click="limparTodasRodadas" title="Limpar Rodadas" aria-label="Limpar Rodadas" class="admin-only w-9 h-9 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
         </div>
@@ -800,7 +552,7 @@
               <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">⚽ Top Goleadores</h4>
               <div class="relative">
                 <div id="scorers-scroll-indicator-up" class="hidden pointer-events-none absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-surface via-surface/80 to-transparent flex items-start justify-center pt-0.5 z-20 transition-opacity duration-300">
-                  <button type="button" onclick="scrollScorersListUp()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais artilheiros acima" aria-label="Rolar para ver artilheiros acima">
+                  <button type="button" data-h-click="scrollScorersListUp" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais artilheiros acima" aria-label="Rolar para ver artilheiros acima">
                     <i data-lucide="chevron-up" class="w-6 h-6 stroke-[2.5]"></i>
                   </button>
                 </div>
@@ -808,7 +560,7 @@
                   <p class="text-xs text-slate-500 py-2">Sem gols cadastrados ainda.</p>
                 </div>
                 <div id="scorers-scroll-indicator-down" class="hidden pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-surface via-surface/80 to-transparent flex items-end justify-center pb-0.5 z-20 transition-opacity duration-300">
-                  <button type="button" onclick="scrollScorersListDown()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais artilheiros abaixo" aria-label="Rolar para ver mais artilheiros">
+                  <button type="button" data-h-click="scrollScorersListDown" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais artilheiros abaixo" aria-label="Rolar para ver mais artilheiros">
                     <i data-lucide="chevron-down" class="w-6 h-6 stroke-[2.5]"></i>
                   </button>
                 </div>
@@ -819,7 +571,7 @@
               <h4 class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">🏆 Mais Vitoriosos</h4>
               <div class="relative">
                 <div id="winners-scroll-indicator-up" class="hidden pointer-events-none absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-surface via-surface/80 to-transparent flex items-start justify-center pt-0.5 z-20 transition-opacity duration-300">
-                  <button type="button" onclick="scrollWinnersListUp()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais vitoriosos acima" aria-label="Rolar para ver vitoriosos acima">
+                  <button type="button" data-h-click="scrollWinnersListUp" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-up" title="Mais vitoriosos acima" aria-label="Rolar para ver vitoriosos acima">
                     <i data-lucide="chevron-up" class="w-6 h-6 stroke-[2.5]"></i>
                   </button>
                 </div>
@@ -827,7 +579,7 @@
                   <p class="text-xs text-slate-500 py-2">Sem jogos finalizados.</p>
                 </div>
                 <div id="winners-scroll-indicator-down" class="hidden pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-surface via-surface/80 to-transparent flex items-end justify-center pb-0.5 z-20 transition-opacity duration-300">
-                  <button type="button" onclick="scrollWinnersListDown()" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais vitoriosos abaixo" aria-label="Rolar para ver mais vitoriosos">
+                  <button type="button" data-h-click="scrollWinnersListDown" class="pointer-events-auto cursor-pointer p-0 text-emerald-400 hover:text-emerald-300 transition-colors scroll-indicator-bounce-down" title="Mais vitoriosos abaixo" aria-label="Rolar para ver mais vitoriosos">
                     <i data-lucide="chevron-down" class="w-6 h-6 stroke-[2.5]"></i>
                   </button>
                 </div>
@@ -853,23 +605,23 @@
           <div class="flex flex-wrap items-center gap-3">
             <!-- Seletor de Métrica (4 Opções) -->
             <div class="inline-flex rounded-xl bg-card p-1 border border-borderLight text-xs font-semibold">
-              <button type="button" id="chart-metric-goals" onclick="setDashboardChartMetric('goals')" class="px-3 py-1.5 rounded-lg transition-all text-white bg-cardLight shadow-sm">
+              <button type="button" id="chart-metric-goals" data-h-click="setDashboardChartMetric" data-a='["goals"]' class="px-3 py-1.5 rounded-lg transition-all text-white bg-cardLight shadow-sm">
                 ⚽ Gols
               </button>
-              <button type="button" id="chart-metric-wins" onclick="setDashboardChartMetric('wins')" class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+              <button type="button" id="chart-metric-wins" data-h-click="setDashboardChartMetric" data-a='["wins"]' class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
                 🏆 Vitórias
               </button>
-              <button type="button" id="chart-metric-consistency" onclick="setDashboardChartMetric('consistency')" class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+              <button type="button" id="chart-metric-consistency" data-h-click="setDashboardChartMetric" data-a='["consistency"]' class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
                 📈 Aproveitamento (%)
               </button>
-              <button type="button" id="chart-metric-avg-goals" onclick="setDashboardChartMetric('avg_goals')" class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
+              <button type="button" id="chart-metric-avg-goals" data-h-click="setDashboardChartMetric" data-a='["avg_goals"]' class="px-3 py-1.5 rounded-lg transition-all text-slate-400 hover:text-white">
                 🎯 Média de Gols
               </button>
             </div>
 
             <!-- Filtro de Jogadores (Dropdown com Multi-seleção) -->
             <div class="relative">
-              <button type="button" id="btn-chart-player-filter" onclick="togglePlayerFilterDropdown(event)" class="text-xs px-3.5 py-2 bg-card hover:bg-cardLight text-slate-200 border border-borderLight rounded-xl transition flex items-center gap-2 font-medium">
+              <button type="button" id="btn-chart-player-filter" data-h-click="togglePlayerFilterDropdown" data-a='["@event"]' class="text-xs px-3.5 py-2 bg-card hover:bg-cardLight text-slate-200 border border-borderLight rounded-xl transition flex items-center gap-2 font-medium">
                 <i data-lucide="users" class="w-3.5 h-3.5 text-neon-accent"></i>
                 <span id="label-chart-player-filter">Todos os Jogadores</span>
                 <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400"></i>
@@ -880,15 +632,15 @@
                 <div class="flex items-center justify-between pb-2 border-b border-borderLight text-xs">
                   <span class="font-bold text-white">Filtrar Jogadores</span>
                   <div class="flex gap-2">
-                    <button type="button" onclick="selectAllChartPlayers(true)" class="text-[11px] text-neon-accent hover:underline">Todos</button>
+                    <button type="button" data-h-click="selectAllChartPlayers" data-a='[true]' class="text-[11px] text-neon-accent hover:underline">Todos</button>
                     <span class="text-slate-600">•</span>
-                    <button type="button" onclick="selectAllChartPlayers(false)" class="text-[11px] text-slate-400 hover:underline">Nenhum</button>
+                    <button type="button" data-h-click="selectAllChartPlayers" data-a='[false]' class="text-[11px] text-slate-400 hover:underline">Nenhum</button>
                   </div>
                 </div>
 
                 <!-- Campo de busca rápida no dropdown -->
                 <div class="relative">
-                  <input type="text" id="chart-player-search" oninput="filterChartPlayerSearch(this.value)" placeholder="Buscar jogador..." class="w-full text-xs bg-card border border-borderLight rounded-lg px-2.5 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent" />
+                  <input type="text" id="chart-player-search" data-h-input="filterChartPlayerSearch" data-a='["@value"]' placeholder="Buscar jogador..." class="w-full text-xs bg-card border border-borderLight rounded-lg px-2.5 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent" />
                 </div>
 
                 <!-- Lista de checkboxes dos jogadores -->
@@ -922,11 +674,11 @@
           </div>
 
           <div class="flex items-center gap-2">
-            <button id="btn-export-pdf" onclick="exportarRelatorioPDF()" disabled class="text-xs px-3.5 py-1.5 bg-neon-accent/15 hover:bg-neon-accent/25 text-neon-accent border border-neon-accent/40 rounded-xl transition flex items-center gap-1.5 font-semibold shadow-sm hover:shadow-neon-glow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-accent/15 disabled:hover:shadow-none" title="Nenhuma partida finalizada para gerar relatório">
+            <button id="btn-export-pdf" data-h-click="exportarRelatorioPDF" disabled class="text-xs px-3.5 py-1.5 bg-neon-accent/15 hover:bg-neon-accent/25 text-neon-accent border border-neon-accent/40 rounded-xl transition flex items-center gap-1.5 font-semibold shadow-sm hover:shadow-neon-glow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-accent/15 disabled:hover:shadow-none" title="Nenhuma partida finalizada para gerar relatório">
               <i data-lucide="file-down" class="w-3.5 h-3.5"></i>
               <span id="btn-export-pdf-text">Gerar PDF</span>
             </button>
-            <button id="btn-clear-history" onclick="limparHistorico()" disabled class="admin-only text-xs px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition flex items-center gap-1 font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-500/10" title="Nenhuma partida finalizada no histórico">
+            <button id="btn-clear-history" data-h-click="limparHistorico" disabled class="admin-only text-xs px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition flex items-center gap-1 font-semibold disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-500/10" title="Nenhuma partida finalizada no histórico">
               <i data-lucide="trash" class="w-3.5 h-3.5"></i>
               <span>Limpar histórico</span>
             </button>
@@ -934,7 +686,7 @@
         </div>
 
         <div class="relative overflow-hidden w-full">
-          <div id="history-slider" class="flex items-start will-change-transform" style="transform: translateX(0%); gap: 1.5rem;">
+          <div id="history-slider" class="ds-a80238e0 flex items-start will-change-transform">
             <div id="history-matches-list" class="w-full shrink-0 space-y-3">
               <p class="text-sm text-slate-500 text-center py-8">Carregando histórico do banco de dados...</p>
             </div>
@@ -947,12 +699,12 @@
             Mostrando <span id="history-page-range" class="font-bold text-white">0-0</span> de <span id="history-total-count" class="font-bold text-white">0</span> partidas
           </div>
           <div class="flex items-center gap-2">
-            <button id="history-prev-btn" onclick="mudarPaginaHistorico(-1)" class="px-3 py-1.5 rounded-xl bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-semibold">
+            <button id="history-prev-btn" data-h-click="mudarPaginaHistorico" data-a='[-1]' class="px-3 py-1.5 rounded-xl bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-semibold">
               <i data-lucide="chevron-left" class="w-4 h-4"></i>
               <span>Anterior</span>
             </button>
             <span id="history-page-indicator" class="px-2.5 py-1 text-slate-400 font-bold bg-pitch border border-borderLight rounded-lg">1 / 1</span>
-            <button id="history-next-btn" onclick="mudarPaginaHistorico(1)" class="px-3 py-1.5 rounded-xl bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-semibold">
+            <button id="history-next-btn" data-h-click="mudarPaginaHistorico" data-a='[1]' class="px-3 py-1.5 rounded-xl bg-card hover:bg-cardLight border border-borderLight text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 font-semibold">
               <span>Próxima</span>
               <i data-lucide="chevron-right" class="w-4 h-4"></i>
             </button>
@@ -1000,7 +752,7 @@
               </div>
             </div>
 
-            <form onsubmit="executarAssumirAdmin(event)" class="pt-2 flex flex-col sm:flex-row gap-2.5">
+            <form data-h-submit="executarAssumirAdmin" data-a='["@event"]' class="pt-2 flex flex-col sm:flex-row gap-2.5">
               <input type="password" id="input-claim-password" placeholder="Digite a senha mestra" required class="flex-1 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
               <button type="submit" id="btn-claim-admin" class="glow-neon px-5 py-2.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 <i data-lucide="unlock" class="w-4 h-4"></i>
@@ -1016,11 +768,11 @@
               <p id="settings-pelada-code" class="text-lg font-black font-mono text-neon-accent tracking-widest mt-0.5">#-----</p>
             </div>
             <div class="flex items-center gap-2">
-              <button onclick="copiarCodigoPelada()" class="px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-slate-300 rounded-xl transition font-medium flex items-center gap-1.5">
+              <button data-h-click="copiarCodigoPelada" class="px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-slate-300 rounded-xl transition font-medium flex items-center gap-1.5">
                 <i data-lucide="copy" class="w-3.5 h-3.5"></i>
                 <span>Copiar Código</span>
               </button>
-              <button onclick="copiarLinkPelada()" class="px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-neon-accent rounded-xl transition font-medium flex items-center gap-1.5">
+              <button data-h-click="copiarLinkPelada" class="px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-neon-accent rounded-xl transition font-medium flex items-center gap-1.5">
                 <i data-lucide="link" class="w-3.5 h-3.5"></i>
                 <span>Copiar Link</span>
               </button>
@@ -1048,7 +800,7 @@
             <div id="pool-chain-container" class="hidden p-3 rounded-xl bg-surface border border-borderLight/60 text-xs text-slate-300 space-y-1.5">
               <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
                 <span>Corrente ativa de histórico:</span>
-                <button onclick="desvincularPool()" class="admin-only text-rose-400 hover:text-rose-300 hover:underline">Desvincular</button>
+                <button data-h-click="desvincularPool" class="admin-only text-rose-400 hover:text-rose-300 hover:underline">Desvincular</button>
               </div>
               <div id="pool-chain-badges" class="flex flex-wrap items-center gap-1.5 font-mono text-xs font-bold">
                 <!-- Badges gerados via JS -->
@@ -1056,7 +808,7 @@
             </div>
 
             <!-- Formulário para Conectar a Pelada Anterior -->
-            <form onsubmit="salvarPoolPeladas(event)" class="pt-1 flex flex-col sm:flex-row gap-2.5 admin-only">
+            <form data-h-submit="salvarPoolPeladas" data-a='["@event"]' class="pt-1 flex flex-col sm:flex-row gap-2.5 admin-only">
               <input type="text" id="input-parent-pelada-code" placeholder="Código da pelada anterior (ex: A8F2K)" maxlength="5" uppercase class="uppercase tracking-widest text-center sm:text-left font-mono font-bold flex-1 bg-surface border border-borderLight rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400">
               <button type="submit" id="btn-save-pool" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 active:scale-95 shadow">
                 <i data-lucide="link" class="w-4 h-4"></i>
@@ -1082,22 +834,22 @@
             </span>
           </div>
 
-          <form id="form-config" onsubmit="event.preventDefault(); autoSalvarConfiguracoes();" class="space-y-4">
+          <form id="form-config" data-h-submit="submitConfiguracoes" data-a='["@event"]' class="space-y-4">
             
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">Jogadores por Time na Linha / Total</label>
-              <input type="number" id="cfg-players-per-team" min="2" max="11" value="5" oninput="autoSalvarConfiguracoes()" onchange="autoSalvarConfiguracoes()" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+              <input type="number" id="cfg-players-per-team" min="2" max="11" value="5" data-h-input="autoSalvarConfiguracoes" data-h-change="autoSalvarConfiguracoes" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
             </div>
 
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">Duração da Partida (minutos)</label>
-              <input type="number" id="cfg-duration" min="5" max="90" value="10" oninput="autoSalvarConfiguracoes()" onchange="autoSalvarConfiguracoes()" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+              <input type="number" id="cfg-duration" min="5" max="90" value="10" data-h-input="autoSalvarConfiguracoes" data-h-change="autoSalvarConfiguracoes" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
             </div>
 
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">Som do Alarme de Fim de Jogo</label>
               <div class="flex items-center gap-2">
-                <select id="cfg-alarm-sound" onchange="aoMudarSomAlarme()" class="flex-1 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent truncate">
+                <select id="cfg-alarm-sound" data-h-change="aoMudarSomAlarme" class="flex-1 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent truncate">
                   <option value="standard-emergency-warning-signal.mp3">🚨 Alarme de Emergência Padrão</option>
                   <option value="samsung-alarm-morning-flower.mp3">🌸 Samsung Morning Flower</option>
                   <option value="this-is-the-end-adele.mp3">🎵 Adele - This is the End</option>
@@ -1107,7 +859,7 @@
                   <option value="police-alarm.mp3">🚓 Sirene Policial</option>
                   <option value="warning-alarm-loud-af.mp3">🔊 Alerta de Aviso Loud</option>
                 </select>
-                <button type="button" id="btn-preview-alarm" onclick="testarSomAlarme()" title="Ouvir som do alarme" class="w-10 h-10 rounded-xl bg-cardLight border border-borderLight hover:border-neon-accent text-neon-accent flex items-center justify-center shrink-0 transition active:scale-95 shadow">
+                <button type="button" id="btn-preview-alarm" data-h-click="testarSomAlarme" title="Ouvir som do alarme" class="w-10 h-10 rounded-xl bg-cardLight border border-borderLight hover:border-neon-accent text-neon-accent flex items-center justify-center shrink-0 transition active:scale-95 shadow">
                   <i id="icon-preview-alarm" data-lucide="play" class="w-4 h-4 fill-current"></i>
                 </button>
               </div>
@@ -1116,7 +868,7 @@
 
             <div>
               <label class="block text-xs font-semibold text-slate-300 mb-1">Formato do Campeonato</label>
-              <select id="cfg-rounds" onchange="autoSalvarConfiguracoes(true)" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+              <select id="cfg-rounds" data-h-change="autoSalvarConfiguracoes" data-a='[true]' class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
                 <option value="single">Turno Único (Todos contra todos uma vez)</option>
                 <option value="double">Turno e Returno (Ida e volta)</option>
                 <option value="custom">Livre (Crie as rodadas e partidas à vontade)</option>
@@ -1140,7 +892,7 @@
   <!-- Modal para Criar Partida Livre/Personalizada -->
   <div id="modal-custom-match" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-surface border border-borderLight rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
-      <button onclick="fecharModalNovaPartida()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+      <button data-h-click="fecharModalNovaPartida" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
 
@@ -1152,7 +904,7 @@
         <p class="text-xs text-slate-400">Escolha a rodada e os dois times que vão se enfrentar.</p>
       </div>
 
-      <form id="form-custom-match" onsubmit="salvarNovaPartidaLivre(event)" class="space-y-4">
+      <form id="form-custom-match" data-h-submit="salvarNovaPartidaLivre" data-a='["@event"]' class="space-y-4">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Número da Rodada</label>
           <input type="number" id="custom-match-round" min="1" max="99" value="1" required class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
@@ -1161,20 +913,20 @@
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Time Mandante</label>
-            <select id="custom-match-home" onchange="onCustomHomeChange()" required class="w-full bg-card border border-borderLight rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-neon-accent">
+            <select id="custom-match-home" data-h-change="onCustomHomeChange" required class="w-full bg-card border border-borderLight rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-neon-accent">
               <!-- Preenchido dinamicamente -->
             </select>
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Time Visitante</label>
-            <select id="custom-match-away" onchange="onCustomAwayChange()" required class="w-full bg-card border border-borderLight rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-neon-accent">
+            <select id="custom-match-away" data-h-change="onCustomAwayChange" required class="w-full bg-card border border-borderLight rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-neon-accent">
               <!-- Preenchido dinamicamente -->
             </select>
           </div>
         </div>
 
         <div class="pt-2 flex justify-end gap-2 border-t border-borderLight/50">
-          <button type="button" onclick="fecharModalNovaPartida()" class="px-4 py-2 bg-card hover:bg-cardLight text-slate-300 hover:text-white text-xs font-semibold rounded-xl border border-borderLight transition">
+          <button type="button" data-h-click="fecharModalNovaPartida" class="px-4 py-2 bg-card hover:bg-cardLight text-slate-300 hover:text-white text-xs font-semibold rounded-xl border border-borderLight transition">
             Cancelar
           </button>
           <button type="submit" class="glow-neon px-5 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition shadow">
@@ -1201,7 +953,7 @@
         </div>
       </div>
 
-      <form id="form-set-password" onsubmit="salvarSenhaMestraObrigatoria(event)" class="space-y-4 pt-1">
+      <form id="form-set-password" data-h-submit="salvarSenhaMestraObrigatoria" data-a='["@event"]' class="space-y-4 pt-1">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Crie sua Senha Mestra</label>
           <input type="password" id="input-new-pelada-password" placeholder="Mínimo 3 caracteres" required minlength="3" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
@@ -1220,7 +972,7 @@
   <!-- Modal para Detalhes do Histórico ou Escalação -->
   <div id="modal-match-details" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-surface border border-borderLight rounded-3xl max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-2xl relative">
-      <button onclick="closeModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+      <button data-h-click="closeModal" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
 
@@ -1263,17 +1015,7 @@
   <!-- Scripts da Aplicação -->
   <script src="/static/audit.js?v=1"></script>
   <script src="/static/audio.js?v=4"></script>
-  <script src="/static/app.js?v=10"></script>
-  <script>
-    lucide.createIcons();
-    // Registro do Service Worker para PWA
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then((reg) => console.log('FutMatch PWA Service Worker registrado:', reg.scope))
-          .catch((err) => console.warn('Erro ao registrar Service Worker:', err));
-      });
-    }
-  </script>
+  <script src="/static/handlers.js?v=4"></script>
+  <script src="/static/app.js?v=15"></script>
 </body>
 </html>
