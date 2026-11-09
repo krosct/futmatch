@@ -611,7 +611,7 @@ def test_vendored_assets_match_recorded_checksums():
     """Detecta troca silenciosa de bibliotecas vendorizadas. Atualizar uma delas exige regravar CHECKSUMS e revalidar o PDF (E2E)."""
     import hashlib
     raiz = os.path.join(os.path.dirname(__file__), "..", "static")
-    for linha in _read_static("vendor/CHECKSUMS.sha256").splitlines():
+    for linha in _read_static("lib/CHECKSUMS.sha256").splitlines():
         esperado, caminho = linha.split(" ", 1)
         with open(os.path.join(raiz, caminho), "rb") as fh:
             assert hashlib.sha256(fh.read()).hexdigest() == esperado, caminho

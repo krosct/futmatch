@@ -1,4 +1,4 @@
-const CACHE_NAME = 'futmatch-v18';
+const CACHE_NAME = 'futmatch-v19';
 const STATIC_ASSETS = [
   '/',
   '/static/index.html',
@@ -7,12 +7,12 @@ const STATIC_ASSETS = [
   '/static/audio.js',
   '/static/audit.js',
   '/static/css/tailwind.css',
-  '/static/vendor/fonts.css',
-  '/static/vendor/fonts/outfit-latin-400-normal.woff2',
-  '/static/vendor/fonts/outfit-latin-700-normal.woff2',
-  '/static/vendor/lucide.min.js',
-  '/static/vendor/chart.umd.min.js',
-  '/static/vendor/confetti.browser.min.js',
+  '/static/lib/fonts.css',
+  '/static/lib/fonts/outfit-latin-400-normal.woff2',
+  '/static/lib/fonts/outfit-latin-700-normal.woff2',
+  '/static/lib/lucide.min.js',
+  '/static/lib/chart.umd.min.js',
+  '/static/lib/confetti.browser.min.js',
   '/static/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',

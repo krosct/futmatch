@@ -16,8 +16,8 @@ Os estilos computados continuam sendo copiados para os elementos; o PDF gerado f
 Ao atualizar o html2canvas, reaplique esse patch ou revalide o PDF.
 
 ## Checksums
-`vendor/CHECKSUMS.sha256` registra o SHA-256 dos arquivos vendorizados (e de `css/*.css` gerados).
+`lib/CHECKSUMS.sha256` registra o SHA-256 dos arquivos vendorizados (e de `css/*.css` gerados).
 O teste `test_vendored_assets_match_recorded_checksums` falha se algum deles mudar sem revisão.
 Ao atualizar um arquivo de propósito, regrave o registro e rode o E2E (`tests/e2e`), que gera um PDF:
 
-    cd static && sha256sum vendor/lucide.min.js vendor/chart.umd.min.js vendor/confetti.browser.min.js html2canvas.min.js jspdf.umd.min.js css/tailwind.css css/app.css css/ds.css vendor/fonts.css | sed 's|  | |' > vendor/CHECKSUMS.sha256
+    cd static && sha256sum lib/lucide.min.js lib/chart.umd.min.js lib/confetti.browser.min.js html2canvas.min.js jspdf.umd.min.js css/tailwind.css css/app.css css/ds.css lib/fonts.css | sed 's|  | |' > lib/CHECKSUMS.sha256
