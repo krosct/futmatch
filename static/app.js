@@ -805,6 +805,111 @@ async function desvincularPool() {
   }
 }
 
+// ==============================
+// BACKUP DA PELADA (EXPORTAR / IMPORTAR JSON)
+// ==============================
+async function exportarPelada() {
+  if (window.SoundManager) window.SoundManager.play('efeitos');
+  if (!state.currentPelada || !state.currentPelada.code) {
+    await showCustomAlert("Nenhuma pelada ativa.", "Erro");
+    return;
+  }
+
+  const code = state.currentPelada.code;
+  const btn = document.getElementById('btn-export-pelada');
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/peladas/${code}/export`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      await showCustomAlert(data.detail || "Erro ao exportar a pelada.", "Erro");
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `futmatch-${code}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Pelada exportada!");
+  } catch (e) {
+    console.error(e);
+    await showCustomAlert("Erro de conexão ao exportar a pelada.", "Erro");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function importarPelada(event) {
+  event.preventDefault();
+  if (window.SoundManager) window.SoundManager.play('efeitos');
+  if (!state.currentPelada || !state.currentPelada.code) {
+    await showCustomAlert("Nenhuma pelada ativa.", "Erro");
+    return;
+  }
+  const fileInput = document.getElementById('input-import-file');
+  const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+  if (!file) {
+    await showCustomAlert("Escolha o arquivo JSON exportado.", "Arquivo Obrigatório");
+    return;
+  }
+
+  let backup;
+  try {
+    backup = JSON.parse(await file.text());
+  } catch (e) {
+    await showCustomAlert("O arquivo não é um JSON válido.", "Arquivo Inválido");
+    return;
+  }
+
+  const confirmado = await showCustomConfirm(
+    "Os dados atuais desta pelada (histórico, jogadores, times e configurações) serão substituídos pelo arquivo. Esta ação não pode ser desfeita.",
+    "Substituir a pelada?",
+    "Substituir",
+    "Cancelar"
+  );
+  if (!confirmado) return;
+
+  const code = state.currentPelada.code;
+  const btn = document.getElementById('btn-import-pelada');
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/peladas/${code}/import`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(backup)
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const msg = Array.isArray(data.detail)
+        ? data.detail.map(d => d.msg).join(", ")
+        : (data.detail || "Não foi possível importar a pelada.");
+      await showCustomAlert(msg, "Erro na Importação");
+      return;
+    }
+
+    if (data.warnings && data.warnings.length) {
+      await showCustomAlert(data.warnings.join("\n"), "Pelada Substituída");
+    } else {
+      showToast("Pelada substituída com sucesso!");
+    }
+    // Recarrega para a tela mostrar os dados importados desde o início
+    window.location.reload();
+  } catch (e) {
+    console.error(e);
+    await showCustomAlert("Erro de conexão ao importar a pelada.", "Erro");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function renderPoolUI(chainCodes) {
   renderPeladaHeader();
   const codes = chainCodes || (state.currentPelada && state.currentPelada.chain_codes) || [state.currentPelada?.code];

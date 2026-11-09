@@ -818,6 +818,34 @@
           </div>
         </div>
 
+        <!-- Backup da Pelada: exportar e importar em JSON -->
+        <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
+          <div class="border-b border-borderLight pb-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+              <i data-lucide="archive" class="w-5 h-5 text-neon-accent"></i>
+              <span>Backup da Pelada</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Exporte em JSON ou importe um arquivo para substituir esta pelada.</p>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-card/50 border border-borderLight flex items-center justify-between gap-4">
+            <p class="text-xs font-semibold text-slate-300">Exportar pelada</p>
+            <button data-h-click="exportarPelada" id="btn-export-pelada" class="px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-neon-accent rounded-xl transition font-medium flex items-center gap-1.5">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Exportar JSON</span>
+            </button>
+          </div>
+
+          <form data-h-submit="importarPelada" data-a='["@event"]' class="p-4 rounded-2xl bg-card border border-borderLight space-y-3">
+            <p class="text-xs font-semibold text-slate-300">Importar pelada</p>
+            <input type="file" id="input-import-file" accept="application/json,.json" required class="block w-full text-xs text-slate-400 file:mr-3 file:px-3 file:py-2 file:rounded-xl file:border-0 file:bg-surface file:text-slate-200 file:font-medium">
+            <button type="submit" id="btn-import-pelada" class="w-full sm:w-auto px-5 py-2.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              <i data-lucide="upload" class="w-4 h-4"></i>
+              <span>Importar e substituir</span>
+            </button>
+          </form>
+        </div>
+
         <!-- Parâmetros da Pelada -->
         <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
           <div class="border-b border-borderLight pb-4 flex items-center justify-between flex-wrap gap-2">
