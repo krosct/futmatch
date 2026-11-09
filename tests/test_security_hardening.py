@@ -480,7 +480,7 @@ def test_no_handler_relies_on_currentTarget():
     assert "currentTarget" not in app
 
 
-async def test_cookie_secure_follows_scheme_in_auto_mode():
+async def test_cookie_secure_follows_scheme_in_auto_mode(async_client):
     """Em HTTP puro (sem TLS) o cookie não recebe Secure, senão o navegador o descartaria."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http_client:
         res = await http_client.post("/api/peladas/create", json={"name": "Http Local", "password": "senha1"})
