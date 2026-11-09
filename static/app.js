@@ -2980,6 +2980,12 @@ function adicionarGolJogador(matchId, playerId, playerName) {
   const isHome = homePlayerIds.has(playerId);
   const isAway = awayPlayerIds.has(playerId);
 
+  // Gol só pode ser atribuído a quem está escalado na partida (snapshot de jogadores de cada time)
+  if (!isHome && !isAway) {
+    showToast("Este jogador não está escalado nesta partida.");
+    return;
+  }
+
   const homeGoalsAssigned = m.events.filter(e => homePlayerIds.has(e.player_id) && e.event_type === "goal").length;
   const awayGoalsAssigned = m.events.filter(e => awayPlayerIds.has(e.player_id) && e.event_type === "goal").length;
 

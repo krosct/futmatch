@@ -620,3 +620,11 @@ def test_vendored_assets_match_recorded_checksums():
 def test_html2canvas_patch_is_present():
     """O patch que impede o <style> injetado (CSP) precisa estar aplicado enquanto a biblioteca estiver vendorizada."""
     assert "/* FutMatch: sem <style> injetado" in _read_static("html2canvas.min.js")
+
+
+def test_goal_requires_player_in_match_lineup():
+    """Gol só é atribuído a jogador escalado na partida (evita gol sem time/placar correspondente)."""
+    app = _read_static("app.js")
+    assert "Este jogador não está escalado nesta partida." in app
+    trecho = app[app.index("function adicionarGolJogador("):app.index("function adicionarGolJogador(") + 900]
+    assert trecho.index("if (!isHome && !isAway)") < trecho.index("homeGoalsAssigned")

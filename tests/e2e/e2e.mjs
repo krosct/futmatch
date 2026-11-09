@@ -87,8 +87,19 @@ try {
   await esperar(600);
   await page.evaluate(() => document.querySelector('[data-h-click="adicionarGolJogadorDeBotao"]').click());
   await esperar(400);
-  const eventos = await page.evaluate((id) => state.fixtures.find((f) => f.id === id).events.length, partidaId);
-  check("botão + Gol registra evento", eventos === 1, `${eventos} evento(s)`);
+  const estadoGol = await page.evaluate((id) => {
+    const f = state.fixtures.find((x) => x.id === id);
+    return {
+      eventos: (f.events || []).map((e) => ({ jogador: e.player_name, tipo: e.event_type, id: e.player_id })),
+      casa: f.home_score, fora: f.away_score,
+      jogadoresCasa: (f.home_players || []).map((p) => p.id), jogadoresFora: (f.away_players || []).map((p) => p.id),
+    };
+  }, partidaId);
+  check("botão + Gol registra evento", estadoGol.eventos.length === 1, `${estadoGol.eventos.length} evento(s)`);
+  const ladoDoGol = estadoGol.eventos.length ? (estadoGol.jogadoresCasa.includes(estadoGol.eventos[0].id) ? "casa" : estadoGol.jogadoresFora.includes(estadoGol.eventos[0].id) ? "fora" : "nenhum") : "-";
+  const golsDoLado = ladoDoGol === "casa" ? estadoGol.casa : ladoDoGol === "fora" ? estadoGol.fora : 0;
+  check("gol atribuído ao time que tem placar", estadoGol.eventos.length === 0 || (ladoDoGol !== "nenhum" && golsDoLado >= 1),
+    `jogador=${estadoGol.eventos[0] && estadoGol.eventos[0].jogador} lado=${ladoDoGol} placar casa=${estadoGol.casa} fora=${estadoGol.fora}`);
 
   // 7. Arrastar e soltar jogador para outro time (drag nativo interceptado pelo puppeteer)
   await page.evaluate(() => { document.querySelectorAll("[data-h-click=\"closeModal\"]").forEach(b => b.click()); });
