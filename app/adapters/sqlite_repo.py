@@ -36,6 +36,36 @@ MATCH_COLUMNS = (
     "away_team_name", "home_score", "away_score", "home_players", "away_players", "events",
     "winner_team_id", "is_draw", "finished", "played_at", "notes",
 )
+MATCH_INSERT_SQL = """
+    INSERT OR REPLACE INTO matches (
+        id, round_number, home_team_id, home_team_name, away_team_id, away_team_name,
+        home_score, away_score, home_players, away_players, events,
+        winner_team_id, is_draw, finished, played_at, notes, pelada_code
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+
+def _match_params(match: Match, pelada_code: str) -> Tuple[Any, ...]:
+    """Valores de uma partida na ordem de MATCH_INSERT_SQL."""
+    return (
+        match.id,
+        match.round_number,
+        match.home_team_id,
+        match.home_team_name,
+        match.away_team_id,
+        match.away_team_name,
+        match.home_score,
+        match.away_score,
+        json.dumps(match.home_players, ensure_ascii=False),
+        json.dumps(match.away_players, ensure_ascii=False),
+        json.dumps(match.events, ensure_ascii=False),
+        match.winner_team_id,
+        1 if match.is_draw else 0,
+        1 if match.finished else 0,
+        match.played_at,
+        match.notes,
+        pelada_code.upper().strip(),
+    )
 
 class SQLiteMatchRepository(MatchRepositoryPort):
     def __init__(self, db_path: str = "futmatch.db"):
@@ -240,35 +270,52 @@ class SQLiteMatchRepository(MatchRepositoryPort):
         if not match.played_at:
             match.played_at = datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S")
 
-        p_code = pelada_code.upper().strip()
         async with aiosqlite.connect(self.db_path) as db:
             # Substitui apenas a partida desta pelada (chave composta pelada_code + id)
-            await db.execute("""
-                INSERT OR REPLACE INTO matches (
-                    id, round_number, home_team_id, home_team_name, away_team_id, away_team_name,
-                    home_score, away_score, home_players, away_players, events,
-                    winner_team_id, is_draw, finished, played_at, notes, pelada_code
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                match.id,
-                match.round_number,
-                match.home_team_id,
-                match.home_team_name,
-                match.away_team_id,
-                match.away_team_name,
-                match.home_score,
-                match.away_score,
-                json.dumps(match.home_players, ensure_ascii=False),
-                json.dumps(match.away_players, ensure_ascii=False),
-                json.dumps(match.events, ensure_ascii=False),
-                match.winner_team_id,
-                1 if match.is_draw else 0,
-                1 if match.finished else 0,
-                match.played_at,
-                match.notes,
-                p_code
-            ))
+            await db.execute(MATCH_INSERT_SQL, _match_params(match, pelada_code))
             await db.commit()
+
+    async def overwrite_pelada(self, pelada: PeladaSession, config: SessionConfig, matches: List[Match]) -> None:
+        code = pelada.code.upper().strip()
+        async with aiosqlite.connect(self.db_path) as db:
+            # Tudo na mesma conexão: se qualquer passo falhar, nada é gravado (o commit só vem no fim).
+            # password_hash não entra no UPDATE: a senha mestra da pelada continua a mesma.
+            await db.execute("""
+                UPDATE peladas
+                SET name = ?, created_at = ?, players = ?, teams = ?, fixtures = ?,
+                    config = ?, parent_code = ?, description = ?
+                WHERE code = ?
+            """, (
+                pelada.name,
+                pelada.created_at,
+                json.dumps(pelada.players, ensure_ascii=False),
+                json.dumps(pelada.teams, ensure_ascii=False),
+                json.dumps(pelada.fixtures, ensure_ascii=False),
+                json.dumps(config.__dict__),
+                pelada.parent_code,
+                pelada.description,
+                code,
+            ))
+            await db.execute(
+                "INSERT OR REPLACE INTO configs (key, val) VALUES (?, ?)",
+                (f"session_config_{code}", json.dumps(config.__dict__))
+            )
+            await db.execute("DELETE FROM matches WHERE pelada_code = ?", (code,))
+            for match in matches:
+                if not match.played_at:
+                    match.played_at = datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S")
+                await db.execute(MATCH_INSERT_SQL, _match_params(match, code))
+            await db.commit()
+
+    async def list_pelada_matches(self, pelada_code: str) -> List[Match]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM matches WHERE pelada_code = ? ORDER BY rowid ASC",
+                (pelada_code.upper().strip(),)
+            )
+            rows = await cursor.fetchall()
+            return [self._row_to_match(r) for r in rows]
 
     async def get_match(self, match_id: str, pelada_code: str) -> Optional[Match]:
         async with aiosqlite.connect(self.db_path) as db:

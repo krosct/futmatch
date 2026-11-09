@@ -40,6 +40,17 @@ class MatchRepositoryPort(ABC):
         pass
 
     @abstractmethod
+    async def overwrite_pelada(self, pelada: PeladaSession, config: SessionConfig, matches: List[Match]) -> None:
+        """Substitui dados, configuração, vínculo de pool e histórico da pelada numa única transação.
+        Não altera a senha mestra da pelada."""
+        pass
+
+    @abstractmethod
+    async def list_pelada_matches(self, pelada_code: str) -> List[Match]:
+        """Partidas gravadas somente nesta pelada (sem as da corrente de pool), na ordem de gravação."""
+        pass
+
+    @abstractmethod
     async def get_match(self, match_id: str, pelada_code: str) -> Optional[Match]:
         pass
 
