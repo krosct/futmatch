@@ -33,29 +33,15 @@ function getActivePeladaCode() {
   return localStorage.getItem('futmatch_active_pelada') || null;
 }
 
-function getAdminToken(code) {
-  const peladaCode = code || (state.currentPelada ? state.currentPelada.code : null);
-  if (!peladaCode) return "";
-  return localStorage.getItem(`futmatch_token_${peladaCode}`) || "";
-}
-
+// A sessão de admin fica num cookie HttpOnly (o navegador envia sozinho; o JS não lê o token).
 function getAuthHeaders(extraHeaders = {}) {
-  const headers = { "Content-Type": "application/json", ...extraHeaders };
-  const token = getAdminToken();
-  if (token) {
-    headers["X-Admin-Token"] = token;
-  }
-  return headers;
+  return { "Content-Type": "application/json", ...extraHeaders };
 }
 
-function setActivePelada(code, role = 'spectator', adminToken = null) {
+function setActivePelada(code, role = 'spectator') {
   state.currentPelada = { code };
   state.role = role;
   localStorage.setItem('futmatch_active_pelada', code);
-  localStorage.setItem(`futmatch_role_${code}`, role);
-  if (adminToken) {
-    localStorage.setItem(`futmatch_token_${code}`, adminToken);
-  }
 
   // Atualiza URL sem recarregar a página
   const newUrl = `${window.location.pathname}?pelada=${code}`;
@@ -139,7 +125,7 @@ function updateRoleUI() {
 
   atualizarVisibilidadeControlesFormato();
 
-  lucide.createIcons();
+  refreshIcons();
 }
 
 // Função utilitária para controlar exibição da landing screen e ocultar cabeçalho/abas/conteúdo
@@ -207,9 +193,9 @@ async function inicializarPelada() {
     }
 
     const data = await res.json();
-    const savedRole = localStorage.getItem(`futmatch_role_${code}`) || 'spectator';
     state.currentPelada = data;
-    state.role = savedRole;
+    // Papel vem do servidor (cookie válido), nunca de armazenamento local
+    state.role = data.is_admin ? 'admin' : 'spectator';
 
     setLandingVisibility(false);
 
@@ -288,7 +274,7 @@ async function criarNovaPelada() {
 
     const data = await res.json();
     // Quem cria é o Líder da pelada
-    setActivePelada(data.code, 'admin', data.admin_token);
+    setActivePelada(data.code, 'admin');
     state.currentPelada = data;
     state.players = [];
     state.teams = [];
@@ -350,8 +336,7 @@ async function entrarNaPelada() {
 
     const data = await res.json();
     // Entra como espectador por padrão
-    const previousRole = localStorage.getItem(`futmatch_role_${code}`) || 'spectator';
-    setActivePelada(data.code, previousRole);
+    setActivePelada(data.code, data.is_admin ? 'admin' : 'spectator');
     state.currentPelada = data;
 
     if (data.players && data.players.length > 0) state.players = data.players;
@@ -394,7 +379,7 @@ function abrirModalDefinirSenha() {
       input.value = "";
       setTimeout(() => input.focus(), 100);
     }
-    lucide.createIcons();
+    refreshIcons();
   }
 }
 
@@ -429,11 +414,6 @@ async function salvarSenhaMestraObrigatoria(event) {
       await showCustomAlert(err.detail || "Erro ao salvar senha.", "Erro");
       if (btn) btn.disabled = false;
       return;
-    }
-
-    const data = await res.json();
-    if (data.admin_token) {
-      localStorage.setItem(`futmatch_token_${state.currentPelada.code}`, data.admin_token);
     }
 
     const modal = document.getElementById('modal-set-password');
@@ -498,7 +478,7 @@ async function executarAssumirAdmin(event) {
     }
 
     // Sucesso ao assumir administração
-    setActivePelada(state.currentPelada.code, 'admin', data.admin_token);
+    setActivePelada(state.currentPelada.code, 'admin');
     input.value = "";
     showToast("Você assumiu a liderança da pelada com sucesso!");
     await showCustomAlert("Privilégios de Líder ativados com sucesso! Agora você pode gerenciar jogadores, confrontos e placares.", "Administrador Confirmado");
@@ -567,6 +547,13 @@ async function sairPelada() {
     claimAdminCooldownTimer = null;
   }
   encerrarLiveEvents();
+
+  // Encerra a sessão de admin desta pelada no servidor (o cookie HttpOnly é removido pela resposta)
+  const leavingCode = state.currentPelada && state.currentPelada.code;
+  if (leavingCode) {
+    fetch(`/api/peladas/${leavingCode}/logout`, { method: "POST" }).catch(() => {});
+  }
+  state.role = 'spectator';
 
   localStorage.removeItem('futmatch_active_pelada');
   const cleanUrl = window.location.pathname;
@@ -872,7 +859,7 @@ function renderPoolUI(chainCodes) {
     }
   }
 
-  lucide.createIcons();
+  refreshIcons();
 }
 
 // Sincroniza o estado atual (jogadores, times, confrontos) com o servidor SQLite
@@ -923,7 +910,7 @@ function atualizarBotaoSomUI() {
     btn.classList.remove('border-rose-500/50', 'hover:border-rose-500', 'text-rose-500', 'hover:text-rose-400');
     btn.classList.add('border-borderLight', 'hover:border-neon-accent/50', 'text-slate-300', 'hover:text-neon-accent');
   }
-  lucide.createIcons();
+  refreshIcons();
 }
 
 function toggleSoundMute() {
@@ -943,7 +930,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateTabPanesVisibility(0);
   atualizarBotaoSomUI();
   await inicializarPelada();
-  lucide.createIcons();
+  refreshIcons();
 
   const playersList = document.getElementById("players-list-container");
   if (playersList) {
@@ -1079,7 +1066,7 @@ function switchTab(tabId) {
   if (tabId === 'dashboard') {
     atualizarDashboard();
   }
-  lucide.createIcons();
+  refreshIcons();
 }
 
 // Posiciona o retângulo verde atrás da aba ativa da navegação desktop
@@ -1103,11 +1090,8 @@ function showToast(msg) {
   const toast = document.getElementById("toast");
   const toastMsg = document.getElementById("toast-msg");
   if (!toast || !toastMsg) return;
-  if (typeof msg === "string" && msg.includes("<")) {
-    toastMsg.innerHTML = msg;
-  } else {
-    toastMsg.textContent = msg;
-  }
+  // Sempre texto puro: mensagens podem conter nomes digitados por usuários
+  toastMsg.textContent = msg;
   toast.classList.remove("translate-y-24", "opacity-0");
   setTimeout(() => {
     toast.classList.add("translate-y-24", "opacity-0");
@@ -1115,7 +1099,7 @@ function showToast(msg) {
 }
 
 // Sistema de Janela de Diálogo Personalizada (Substitui window.alert e window.confirm)
-function showCustomAlert(message, title = "Aviso") {
+function showCustomAlert(message, title = "Aviso", allowHtml = false) {
   return new Promise((resolve) => {
     const modal = document.getElementById("custom-dialog-modal");
     const titleEl = document.getElementById("custom-dialog-title");
@@ -1130,7 +1114,8 @@ function showCustomAlert(message, title = "Aviso") {
     }
 
     titleEl.textContent = title;
-    if (typeof message === "string" && message.includes("<")) {
+    // HTML só quando o chamador garante que os dados já foram escapados (allowHtml)
+    if (allowHtml) {
       msgEl.innerHTML = message;
     } else {
       msgEl.textContent = message;
@@ -1163,11 +1148,11 @@ function showCustomAlert(message, title = "Aviso") {
     window.addEventListener("keydown", handleKeydown, true);
     modal.classList.remove("hidden");
     okBtn.focus();
-    lucide.createIcons();
+    refreshIcons();
   });
 }
 
-function showCustomConfirm(message, title = "Confirmação", confirmText = "Confirmar", cancelText = "Cancelar") {
+function showCustomConfirm(message, title = "Confirmação", confirmText = "Confirmar", cancelText = "Cancelar", allowHtml = false) {
   return new Promise((resolve) => {
     const modal = document.getElementById("custom-dialog-modal");
     const titleEl = document.getElementById("custom-dialog-title");
@@ -1182,7 +1167,7 @@ function showCustomConfirm(message, title = "Confirmação", confirmText = "Conf
     }
 
     titleEl.textContent = title;
-    if (typeof message === "string" && message.includes("<")) {
+    if (allowHtml) {
       msgEl.innerHTML = message;
     } else {
       msgEl.textContent = message;
@@ -1227,7 +1212,7 @@ function showCustomConfirm(message, title = "Confirmação", confirmText = "Conf
     window.addEventListener("keydown", handleKeydown, true);
     modal.classList.remove("hidden");
     okBtn.focus();
-    lucide.createIcons();
+    refreshIcons();
   });
 }
 
@@ -1338,12 +1323,12 @@ function renderPlayersList() {
   const isLeader = state.role === 'admin';
 
   container.innerHTML = state.players.map((p, idx) => `
-    <div ${isLeader ? `draggable="true" data-drag-kind="player" data-player-id="${p.id}" ondragstart="onPlayerDragStart(event, '${p.id}')" ondragend="onDragEnd()" title="Arraste para um time"` : ''} class="flex items-center justify-between p-2.5 bg-card/60 hover:bg-card border border-borderLight/40 rounded-xl transition ${isLeader ? 'cursor-grab active:cursor-grabbing select-none' : ''}">
+    <div ${isLeader ? `draggable="true" data-drag-kind="player" data-player-id="${p.id}" data-h-dragstart="onPlayerDragStart" data-a="${escapeHtml(JSON.stringify(["@event", p.id]))}" data-h-dragend="onDragEnd" title="Arraste para um time"` : ''} class="flex items-center justify-between p-2.5 bg-card/60 hover:bg-card border border-borderLight/40 rounded-xl transition ${isLeader ? 'cursor-grab active:cursor-grabbing select-none' : ''}">
       <div class="flex items-center space-x-2.5 min-w-0">
         ${isLeader ? '<i data-lucide="grip-vertical" class="w-3.5 h-3.5 text-slate-600 shrink-0"></i>' : ''}
         <span class="text-xs font-bold text-slate-500 w-5 text-center">${idx + 1}</span>
         ${isLeader ? `
-          <button type="button" onclick="togglePlayerRole('${p.id}')" title="Clique para alternar entre LIN e GK" class="focus:outline-none transition-transform active:scale-90 cursor-pointer">
+          <button type="button" data-h-click="togglePlayerRole" data-a="${escapeHtml(JSON.stringify([p.id]))}" title="Clique para alternar entre LIN e GK" class="focus:outline-none transition-transform active:scale-90 cursor-pointer">
             ${p.is_goalkeeper 
               ? '<span class="badge-gk text-[10px] text-black font-extrabold px-1.5 py-0.5 rounded shadow hover:brightness-110">GK</span>' 
               : '<span class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-1.5 py-0.5 rounded border border-slate-700">LIN</span>'
@@ -1359,7 +1344,7 @@ function renderPlayersList() {
         `}
         <span class="text-sm font-semibold text-white truncate">${escapeHtml(p.name)}</span>
         ${isLeader ? `
-          <button type="button" onclick="cyclePlayerLevel('${p.id}')" title="Clique para alterar nível (1 a 5 estrelas)" class="focus:outline-none hover:scale-105 active:scale-95 transition-transform cursor-pointer flex items-center px-1 py-0.5 rounded hover:bg-slate-800/60">
+          <button type="button" data-h-click="cyclePlayerLevel" data-a="${escapeHtml(JSON.stringify([p.id]))}" title="Clique para alterar nível (1 a 5 estrelas)" class="focus:outline-none hover:scale-105 active:scale-95 transition-transform cursor-pointer flex items-center px-1 py-0.5 rounded hover:bg-slate-800/60">
             <span class="text-amber-400 text-xs tracking-tighter select-none">${"★".repeat(p.level)}${"☆".repeat(5 - p.level)}</span>
           </button>
         ` : `
@@ -1367,7 +1352,7 @@ function renderPlayersList() {
         `}
       </div>
       ${isLeader ? `
-        <button onclick="removePlayer('${p.id}')" class="text-slate-500 hover:text-rose-400 p-1 transition" title="Remover jogador">
+        <button data-h-click="removePlayer" data-a="${escapeHtml(JSON.stringify([p.id]))}" class="text-slate-500 hover:text-rose-400 p-1 transition" title="Remover jogador">
           <i data-lucide="x" class="w-4 h-4"></i>
         </button>
       ` : ''}
@@ -1375,7 +1360,7 @@ function renderPlayersList() {
   `).join("");
 
   sincronizarEstadoServidor();
-  lucide.createIcons();
+  refreshIcons();
   updatePlayersScrollIndicator();
 }
 
@@ -1582,7 +1567,7 @@ async function inicioRapido() {
   );
   if (semTime.length > 0) {
     const lista = semTime.map(j => `• ${escapeHtml(j.name)}`).join('<br>');
-    await showCustomAlert(`Os jogadores abaixo ainda não estão em nenhum time:<br>${lista}`, "Jogadores sem Time");
+    await showCustomAlert(`Os jogadores abaixo ainda não estão em nenhum time:<br>${lista}`, "Jogadores sem Time", true);
     return;
   }
 
@@ -1701,7 +1686,7 @@ function renderTeamsGrid() {
 
   if (state.teams.length === 0) {
     container.innerHTML = isLeader ? `
-      <button type="button" onclick="adicionarTimeManual()" class="md:col-span-2 w-full text-center py-16 border-2 border-dashed border-borderLight rounded-2xl text-slate-500 space-y-3 hover:border-neon-accent/60 hover:text-slate-300 transition cursor-pointer">
+      <button type="button" data-h-click="adicionarTimeManual" class="md:col-span-2 w-full text-center py-16 border-2 border-dashed border-borderLight rounded-2xl text-slate-500 space-y-3 hover:border-neon-accent/60 hover:text-slate-300 transition cursor-pointer">
         <i data-lucide="users-2" class="w-12 h-12 mx-auto stroke-1 text-slate-600"></i>
         <p class="text-sm">Clique <strong class="text-neon-accent">aqui</strong> para criar os times</p>
       </button>
@@ -1711,7 +1696,7 @@ function renderTeamsGrid() {
         <p class="text-sm">Nenhum time montado ainda.</p>
       </div>
     `;
-    lucide.createIcons();
+    refreshIcons();
     return;
   }
 
@@ -1726,34 +1711,34 @@ function renderTeamsGrid() {
 
     const dragAttrs = isLeader ? `
       draggable="true"
-      data-drag-kind="team" data-team-id="${t.id}"
-      ondragstart="onTeamDragStart(event, '${t.id}')"
-      ondragend="onDragEnd()"
-      ondragover="onCardDragOver(event, '${t.id}')"
-      ondragleave="onCardDragLeave(event)"
-      ondrop="onCardDrop(event, '${t.id}')"
+      data-drag-kind="team" data-team-id="${escapeHtml(t.id)}"
+      data-h-dragstart="onTeamDragStart" data-a="${escapeHtml(JSON.stringify(["@event", t.id]))}"
+      data-h-dragend="onDragEnd"
+      data-h-dragover="onCardDragOver" data-a="${escapeHtml(JSON.stringify(["@event", t.id]))}"
+      data-h-dragleave="onCardDragLeave" data-a="${escapeHtml(JSON.stringify(["@event"]))}"
+      data-h-drop="onCardDrop" data-a="${escapeHtml(JSON.stringify(["@event", t.id]))}"
       title="Arraste para trocar de posição com outro time"` : '';
 
     return `
       <div id="team-card-${t.id}" data-team-card ${dragAttrs} class="bg-card border border-borderLight rounded-2xl p-5 space-y-3.5 relative overflow-hidden transition hover:border-slate-500 ${isLeader ? 'cursor-grab active:cursor-grabbing select-none' : ''}">
         <!-- Barra de Cor no Topo -->
-        <div class="absolute top-0 left-0 right-0 h-1.5" style="background-color: ${cor}"></div>
+        <div class="ds-0dcd82c1-${cor.slice(1)} absolute top-0 left-0 right-0 h-1.5"></div>
 
         <div class="flex items-center justify-between pt-1">
           <div class="flex items-center space-x-2.5 min-w-0">
             ${isLeader ? `
-              <button type="button" onclick="abrirSeletorCor(event, '${t.id}')" title="Clique para escolher a cor do time" class="w-3.5 h-3.5 rounded-full shadow shrink-0 hover:scale-125 transition cursor-pointer" style="background-color: ${cor}"></button>
+              <button type="button" data-h-click="abrirSeletorCor" data-a="${escapeHtml(JSON.stringify(["@event", t.id]))}" title="Clique para escolher a cor do time" class="ds-0dcd82c1-${cor.slice(1)} w-3.5 h-3.5 rounded-full shadow shrink-0 hover:scale-125 transition cursor-pointer"></button>
             ` : `
-              <span class="w-3.5 h-3.5 rounded-full shadow shrink-0" style="background-color: ${cor}"></span>
+              <span class="ds-0dcd82c1-${cor.slice(1)} w-3.5 h-3.5 rounded-full shadow shrink-0"></span>
             `}
-            <h4 id="nome-time-${t.id}" ${isLeader ? `ondblclick="editarNomeTime('${t.id}')" title="Clique duas vezes para renomear" class="font-extrabold text-base truncate cursor-text"` : `class="font-extrabold text-base truncate"`} style="color: ${cor};">${escapeHtml(t.name)}</h4>
+            <h4 id="nome-time-${t.id}" ${isLeader ? `data-h-dblclick="editarNomeTime" data-a="${escapeHtml(JSON.stringify([t.id]))}" title="Clique duas vezes para renomear" class="ds-c8c42c63-${cor.slice(1)} font-extrabold text-base truncate cursor-text"` : `class="font-extrabold text-base truncate"`}>${escapeHtml(t.name)}</h4>
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <div class="text-[11px] font-bold text-slate-400 bg-pitch px-2 py-0.5 rounded-lg border border-borderLight" title="Força média do time">
               ★ ${avgStars} / 5.0
             </div>
             ${isLeader ? `
-              <button type="button" onclick="removerTime('${t.id}')" title="Excluir time" aria-label="Excluir time" class="w-8 h-8 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+              <button type="button" data-h-click="removerTime" data-a="${escapeHtml(JSON.stringify([t.id]))}" title="Excluir time" aria-label="Excluir time" class="w-8 h-8 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
             ` : ''}
@@ -1779,7 +1764,7 @@ function renderTeamsGrid() {
                 ${hasEff ? `<span class="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-1 py-0.2 rounded" title="Nível efetivo ponderado pelo histórico (vitórias e gols): ${p.effective_level.toFixed(1)}">⚡ ${p.effective_level.toFixed(1)}</span>` : ''}
                 <span class="text-amber-400 text-[10px]" title="${p.level} estrelas cadastradas">${"★".repeat(p.level)}</span>
                 ${isLeader ? `
-                  <button type="button" onclick="removerJogadorDoTime('${p.id}', '${t.id}')" title="Tirar do time" class="text-slate-500 hover:text-rose-400 transition">
+                  <button type="button" data-h-click="removerJogadorDoTime" data-a="${escapeHtml(JSON.stringify([p.id, t.id]))}" title="Tirar do time" class="text-slate-500 hover:text-rose-400 transition">
                     <i data-lucide="x" class="w-3 h-3"></i>
                   </button>
                 ` : ''}
@@ -1791,7 +1776,7 @@ function renderTeamsGrid() {
     `;
   }).join("");
 
-  lucide.createIcons();
+  refreshIcons();
 }
 
 // ==============================
@@ -1822,12 +1807,12 @@ function onCardDragOver(event, teamId) {
   if (dragState.kind === 'team' && dragState.id === teamId) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = dragState.kind === 'team' ? 'move' : 'copy';
-  event.currentTarget.classList.add('ring-2', 'ring-neon-accent');
+  this.classList.add('ring-2', 'ring-neon-accent');
 }
 
 function onCardDragLeave(event) {
-  if (event.currentTarget.contains(event.relatedTarget)) return;
-  event.currentTarget.classList.remove('ring-2', 'ring-neon-accent');
+  if (this.contains(event.relatedTarget)) return;
+  this.classList.remove('ring-2', 'ring-neon-accent');
 }
 
 function onCardDrop(event, teamId) {
@@ -2001,7 +1986,7 @@ let seletorCorTeamId = null;
 
 function abrirSeletorCor(event, teamId) {
   event.stopPropagation();
-  const botao = event.currentTarget;
+  const botao = this;
   const time = state.teams.find(t => t.id === teamId);
   if (!time) return;
   fecharSeletorCor();
@@ -2012,7 +1997,7 @@ function abrirSeletorCor(event, teamId) {
   pop.className = 'fixed z-[60] flex items-center gap-2 p-2 bg-slate-900/95 backdrop-blur border border-borderLight rounded-xl shadow-2xl';
   pop.innerHTML = DEFAULT_TEAM_PALETTE.map(p => {
     const selecionada = (time.color || '').toLowerCase() === p.color.toLowerCase();
-    return `<button type="button" title="${p.name.replace('Colete ', '')}" onclick="escolherCorTime('${p.color}')" class="w-6 h-6 rounded-full transition hover:scale-110 ${selecionada ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}" style="background-color: ${p.color}"></button>`;
+    return `<button type="button" title="${p.name.replace('Colete ', '')}" data-h-click="escolherCorTime" data-a="${escapeHtml(JSON.stringify([p.color]))}" class="ds-0dcd82c1-${p.color.slice(1)} w-6 h-6 rounded-full transition hover:scale-110 ${selecionada ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}"></button>`;
   }).join('');
   document.body.appendChild(pop);
 
@@ -2215,7 +2200,7 @@ function atualizarOpcoesTimesModal(changedSide = null) {
   // Renderiza opções do Mandante e do Visitante (sem bloqueio: escolher um time já usado no outro lado troca os lados)
   const optionsHtml = (selectedId) => state.teams.map(t => {
     const teamColor = t.color || getTeamColor(t.id || t.name);
-    return `<option value="${t.id}" ${t.id === selectedId ? 'selected' : ''} style="color: ${teamColor}; background-color: #111827; font-weight: 700;">● ${escapeHtml(t.name)}</option>`;
+    return `<option class="ds-b7c26a56-${teamColor.slice(1)}" value="${t.id}" ${t.id === selectedId ? 'selected' : ''}>● ${escapeHtml(t.name)}</option>`;
   }).join("");
   homeSelect.innerHTML = optionsHtml(currentHome);
   awaySelect.innerHTML = optionsHtml(currentAway);
@@ -2286,7 +2271,7 @@ function abrirModalNovaPartida(prefilledRound = null) {
   }
 
   modal.classList.remove("hidden");
-  lucide.createIcons();
+  refreshIcons();
 }
 
 function fecharModalNovaPartida() {
@@ -2355,10 +2340,10 @@ async function removerPartidaCustomizada(matchId) {
   if (!confirmed) return;
 
   // Se a partida estava salva no banco, remove também da persistência
-  if (match.finished) {
+  if (match.finished && state.currentPelada && state.currentPelada.code) {
     try {
-      const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
-      const deleteUrl = pCode ? `/api/matches/${matchId}?pelada_code=${pCode}` : `/api/matches/${matchId}`;
+      const pCode = state.currentPelada.code;
+      const deleteUrl = `/api/matches/${matchId}?pelada_code=${pCode}`;
       await fetch(deleteUrl, {
         method: "DELETE",
         headers: getAuthHeaders()
@@ -2423,12 +2408,12 @@ function renderFixtures() {
     const isLeader = state.role === 'admin';
     if (isLeader) {
       // Área clicável: cria a primeira partida (livre) ou gera os confrontos (preset)
-      const acao = isCustom ? 'abrirModalNovaPartida()' : 'gerarTabelaConfrontos()';
+      const acao = isCustom ? 'abrirModalNovaPartida' : 'gerarTabelaConfrontos';
       const texto = isCustom
         ? 'Clique <strong class="text-neon-accent">aqui</strong> para criar a primeira partida'
         : 'Sorteie os times e clique <strong class="text-neon-accent">aqui</strong> para gerar os confrontos';
       container.innerHTML = `
-        <button type="button" onclick="${acao}" class="w-full bg-surface border-2 border-dashed border-borderLight hover:border-neon-accent/60 rounded-3xl p-12 text-center text-slate-500 hover:text-slate-300 space-y-3 transition cursor-pointer">
+        <button type="button" data-h-click="${acao}" class="w-full bg-surface border-2 border-dashed border-borderLight hover:border-neon-accent/60 rounded-3xl p-12 text-center text-slate-500 hover:text-slate-300 space-y-3 transition cursor-pointer">
           <i data-lucide="calendar-plus" class="w-12 h-12 mx-auto stroke-1"></i>
           <p class="text-sm">${texto}</p>
         </button>
@@ -2441,7 +2426,7 @@ function renderFixtures() {
         </div>
       `;
     }
-    lucide.createIcons();
+    refreshIcons();
     return;
   }
 
@@ -2465,7 +2450,7 @@ function renderFixtures() {
             <span>Rodada ${roundNum}</span>
           </div>
           ${isCustomMode && isLeader ? `
-            <button onclick="abrirModalNovaPartida(${roundNum})" class="text-[11px] text-neon-accent hover:underline flex items-center gap-1 font-semibold normal-case">
+            <button data-h-click="abrirModalNovaPartida" data-a="${escapeHtml(JSON.stringify([roundNum]))}" class="text-[11px] text-neon-accent hover:underline flex items-center gap-1 font-semibold normal-case">
               <i data-lucide="plus" class="w-3 h-3"></i>
               <span>Jogo na Rodada ${roundNum}</span>
             </button>
@@ -2479,7 +2464,7 @@ function renderFixtures() {
   }
 
   container.innerHTML = html;
-  lucide.createIcons();
+  refreshIcons();
 
   // Inicia o tick se houver partidas com cronômetro em execução
   const hasRunningTimer = (state.fixtures || []).some(m => !m.finished && m.timer_status === 'running');
@@ -2511,12 +2496,12 @@ function renderSingleMatchCard(m) {
         
         <!-- Mandante -->
         <div class="flex-1 text-center space-y-2">
-          <h4 class="font-extrabold text-sm sm:text-base truncate" style="color: ${homeColor};">${escapeHtml(m.home_team_name)}</h4>
+          <h4 class="ds-c8c42c63-${homeColor.slice(1)} font-extrabold text-sm sm:text-base truncate">${escapeHtml(m.home_team_name)}</h4>
           ${(!isFinished && isLeader) ? `
             <div class="flex items-center justify-center gap-1.5">
-              <button onclick="adjustScore('${m.id}', 'home', -1)" class="w-7 h-7 rounded-lg bg-cardLight hover:bg-slate-700 text-slate-300 font-bold text-xs transition">-</button>
+              <button data-h-click="adjustScore" data-a="${escapeHtml(JSON.stringify([m.id, "home", -1]))}" class="w-7 h-7 rounded-lg bg-cardLight hover:bg-slate-700 text-slate-300 font-bold text-xs transition">-</button>
               <span id="score-home-${m.id}" class="text-2xl font-black text-white w-8">${m.home_score}</span>
-              <button onclick="adjustScore('${m.id}', 'home', 1)" class="w-7 h-7 rounded-lg bg-cardLight hover:bg-neon-accent hover:text-black font-bold text-xs transition">+</button>
+              <button data-h-click="adjustScore" data-a="${escapeHtml(JSON.stringify([m.id, "home", 1]))}" class="w-7 h-7 rounded-lg bg-cardLight hover:bg-neon-accent hover:text-black font-bold text-xs transition">+</button>
             </div>
           ` : `
             <div class="text-3xl font-black text-white">${m.home_score}</div>
@@ -2527,7 +2512,7 @@ function renderSingleMatchCard(m) {
         <div class="text-center px-1 sm:px-2 flex flex-col items-center justify-center select-none shrink-0 overflow-visible translate-y-1">
           <button 
             type="button"
-            ${(!isFinished && isLeader) ? `onclick="toggleMatchTimer('${m.id}')"` : ''}
+            ${(!isFinished && isLeader) ? `data-h-click="toggleMatchTimer" data-a="${escapeHtml(JSON.stringify([m.id]))}"` : ''}
             ${(!isFinished && !isLeader) ? 'disabled' : ''}
             title="${isFinished ? 'Partida encerrada' : (!isLeader ? 'Apenas o administrador controla o cronômetro' : (m.timer_status === 'running' ? 'Pausar cronômetro' : 'Iniciar / Retomar cronômetro'))}"
             aria-label="${isFinished ? 'Partida encerrada' : 'Controlar cronômetro da partida'}"
@@ -2544,12 +2529,12 @@ function renderSingleMatchCard(m) {
 
         <!-- Visitante -->
         <div class="flex-1 text-center space-y-2">
-          <h4 class="font-extrabold text-sm sm:text-base truncate" style="color: ${awayColor};">${escapeHtml(m.away_team_name)}</h4>
+          <h4 class="ds-c8c42c63-${awayColor.slice(1)} font-extrabold text-sm sm:text-base truncate">${escapeHtml(m.away_team_name)}</h4>
           ${(!isFinished && isLeader) ? `
             <div class="flex items-center justify-center gap-1.5">
-              <button onclick="adjustScore('${m.id}', 'away', -1)" class="w-7 h-7 rounded-lg bg-cardLight hover:bg-slate-700 text-slate-300 font-bold text-xs transition">-</button>
+              <button data-h-click="adjustScore" data-a="${escapeHtml(JSON.stringify([m.id, "away", -1]))}" class="w-7 h-7 rounded-lg bg-cardLight hover:bg-slate-700 text-slate-300 font-bold text-xs transition">-</button>
               <span id="score-away-${m.id}" class="text-2xl font-black text-white w-8">${m.away_score}</span>
-              <button onclick="adjustScore('${m.id}', 'away', 1)" class="w-7 h-7 rounded-lg bg-cardLight hover:bg-neon-accent hover:text-black font-bold text-xs transition">+</button>
+              <button data-h-click="adjustScore" data-a="${escapeHtml(JSON.stringify([m.id, "away", 1]))}" class="w-7 h-7 rounded-lg bg-cardLight hover:bg-neon-accent hover:text-black font-bold text-xs transition">+</button>
             </div>
           ` : `
             <div class="text-3xl font-black text-white">${m.away_score}</div>
@@ -2573,7 +2558,7 @@ function renderSingleMatchCard(m) {
                 ${isLeader ? `
                   <button 
                     type="button" 
-                    onclick="removerInicioPartida('${m.id}')" 
+                    data-h-click="removerInicioPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" 
                     title="Descartar início da partida" 
                     aria-label="Descartar início da partida" 
                     class="w-4 h-4 rounded-full bg-rose-500/20 hover:bg-rose-500 text-rose-400 hover:text-white flex items-center justify-center transition active:scale-95 ml-0.5">
@@ -2590,15 +2575,15 @@ function renderSingleMatchCard(m) {
       ${!isFinished ? `
         <div class="pt-2 border-t border-borderLight/40 flex items-center justify-between text-xs">
           ${isLeader ? `
-            <button onclick="abrirAtribuicaoGols('${m.id}')" class="text-slate-400 hover:text-neon-accent flex items-center gap-1 transition">
+            <button data-h-click="abrirAtribuicaoGols" data-a="${escapeHtml(JSON.stringify([m.id]))}" class="text-slate-400 hover:text-neon-accent flex items-center gap-1 transition">
               <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
               <span>Quem fez os gols? (${m.events ? m.events.length : 0})</span>
             </button>
             <div class="flex items-center gap-2">
-              <button onclick="removerPartidaCustomizada('${m.id}')" title="Excluir Partida" aria-label="Excluir Partida" class="w-8 h-8 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+              <button data-h-click="removerPartidaCustomizada" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Excluir Partida" aria-label="Excluir Partida" class="w-8 h-8 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
-              <button onclick="salvarPartidaFinalizada('${m.id}')" title="Salvar Resultado" aria-label="Salvar Resultado" class="w-8 h-8 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold rounded-xl transition shadow flex items-center justify-center active:scale-95">
+              <button data-h-click="salvarPartidaFinalizada" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Salvar Resultado" aria-label="Salvar Resultado" class="w-8 h-8 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold rounded-xl transition shadow flex items-center justify-center active:scale-95">
                 <i data-lucide="save" class="w-4 h-4"></i>
               </button>
             </div>
@@ -2611,12 +2596,12 @@ function renderSingleMatchCard(m) {
         </div>
       ` : `
         <div class="pt-2 border-t border-borderLight/30 flex items-center justify-between text-xs text-slate-400">
-          <button onclick="verDetalhesPartida('${m.id}')" class="text-neon-accent hover:underline flex items-center gap-1">
+          <button data-h-click="verDetalhesPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" class="text-neon-accent hover:underline flex items-center gap-1">
             <i data-lucide="eye" class="w-3.5 h-3.5"></i>
             <span>Ver detalhes</span>
           </button>
           ${isLeader ? `
-            <button onclick="reabrirPartida('${m.id}')" class="px-3 py-1.5 bg-cardLight hover:bg-amber-400 hover:text-black text-amber-400 font-bold rounded-xl transition flex items-center gap-1 text-xs active:scale-95">
+            <button data-h-click="reabrirPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" class="px-3 py-1.5 bg-cardLight hover:bg-amber-400 hover:text-black text-amber-400 font-bold rounded-xl transition flex items-center gap-1 text-xs active:scale-95">
               <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
               <span>Editar Partida</span>
             </button>
@@ -2771,7 +2756,7 @@ function atualizarBotaoPreviewAlarme(isPlaying) {
   btn.innerHTML = `<i id="icon-preview-alarm" data-lucide="${isPlaying ? 'square' : 'play'}" class="w-4 h-4 fill-current"></i>`;
   btn.setAttribute("title", isPlaying ? "Parar teste de som" : "Ouvir som do alarme");
   if (window.lucide && typeof window.lucide.createIcons === "function") {
-    window.lucide.createIcons();
+    window.refreshIcons();
   }
 }
 
@@ -2858,7 +2843,7 @@ function abrirAtribuicaoGols(matchId) {
 
   renderConteudoAtribuicaoGols(matchId);
   modal.classList.remove("hidden");
-  lucide.createIcons();
+  refreshIcons();
 }
 
 function renderConteudoAtribuicaoGols(matchId) {
@@ -2889,9 +2874,9 @@ function renderConteudoAtribuicaoGols(matchId) {
           <span>Artilharia da Partida</span>
         </h3>
         <span class="text-xs px-2.5 py-1 rounded-xl bg-card border border-borderLight font-extrabold flex items-center gap-1.5">
-          <span style="color: ${homeColor};">${escapeHtml(m.home_team_name)}</span>
+          <span class="ds-c8c42c63-${homeColor.slice(1)}">${escapeHtml(m.home_team_name)}</span>
           <span class="text-white">${m.home_score} x ${m.away_score}</span>
-          <span style="color: ${awayColor};">${escapeHtml(m.away_team_name)}</span>
+          <span class="ds-c8c42c63-${awayColor.slice(1)}">${escapeHtml(m.away_team_name)}</span>
         </span>
       </div>
       <p class="text-xs text-slate-400 mt-1">Distribua os gols marcados no placar entre os atletas de cada equipe:</p>
@@ -2899,7 +2884,7 @@ function renderConteudoAtribuicaoGols(matchId) {
       <!-- Status de Gols por Time -->
       <div class="grid grid-cols-2 gap-2 mt-3">
         <div class="p-2.5 rounded-xl bg-card border border-borderLight/60 text-xs">
-          <div class="font-bold truncate" style="color: ${homeColor};">${escapeHtml(m.home_team_name)}</div>
+          <div class="ds-c8c42c63-${homeColor.slice(1)} font-bold truncate">${escapeHtml(m.home_team_name)}</div>
           <div class="flex items-center justify-between mt-1 text-[11px]">
             <span class="text-slate-400">Atribuídos: <strong class="text-white">${homeGoalsAssigned}/${m.home_score}</strong></span>
             ${homeRemaining === 0 ? '<span class="text-emerald-400 font-bold">✓ Completo</span>' : `<span class="text-amber-400 font-bold">Faltam ${homeRemaining}</span>`}
@@ -2907,7 +2892,7 @@ function renderConteudoAtribuicaoGols(matchId) {
         </div>
 
         <div class="p-2.5 rounded-xl bg-card border border-borderLight/60 text-xs">
-          <div class="font-bold truncate" style="color: ${awayColor};">${escapeHtml(m.away_team_name)}</div>
+          <div class="ds-c8c42c63-${awayColor.slice(1)} font-bold truncate">${escapeHtml(m.away_team_name)}</div>
           <div class="flex items-center justify-between mt-1 text-[11px]">
             <span class="text-slate-400">Atribuídos: <strong class="text-white">${awayGoalsAssigned}/${m.away_score}</strong></span>
             ${awayRemaining === 0 ? '<span class="text-emerald-400 font-bold">✓ Completo</span>' : `<span class="text-amber-400 font-bold">Faltam ${awayRemaining}</span>`}
@@ -2919,7 +2904,7 @@ function renderConteudoAtribuicaoGols(matchId) {
     <div id="goals-players-scroll" class="space-y-4 max-h-72 overflow-y-auto pr-1">
       <!-- Time Mandante -->
       <div class="space-y-1.5">
-        <div class="text-[11px] font-bold uppercase tracking-wider flex items-center justify-between" style="color: ${homeColor};">
+        <div class="ds-c8c42c63-${homeColor.slice(1)} text-[11px] font-bold uppercase tracking-wider flex items-center justify-between">
           <span>${escapeHtml(m.home_team_name)} (Placar: ${m.home_score})</span>
           <span class="text-slate-400 font-normal lowercase">${homeGoalsAssigned}/${m.home_score} marcados</span>
         </div>
@@ -2935,9 +2920,9 @@ function renderConteudoAtribuicaoGols(matchId) {
               <div class="flex items-center gap-2">
                 <span class="text-neon-accent font-extrabold text-xs">${goalsCount} ⚽</span>
                 ${goalsCount > 0 ? `
-                  <button onclick="removerGolJogador('${m.id}', '${p.id}')" class="w-6 h-6 rounded-lg bg-cardLight hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 font-bold transition flex items-center justify-center text-xs">-</button>
+                  <button data-h-click="removerGolJogador" data-a="${escapeHtml(JSON.stringify([m.id, p.id]))}" class="w-6 h-6 rounded-lg bg-cardLight hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 font-bold transition flex items-center justify-center text-xs">-</button>
                 ` : ''}
-                <button onclick="adicionarGolJogador('${m.id}', '${p.id}', '${escapeHtml(p.name)}')" ${!canAdd ? 'disabled' : ''} class="px-2.5 py-1 ${canAdd ? 'bg-cardLight hover:bg-neon-accent hover:text-black text-white' : 'bg-cardLight/40 text-slate-600 cursor-not-allowed'} font-bold rounded-lg transition text-xs">+ Gol</button>
+                <button data-match-id="${escapeHtml(m.id)}" data-player-id="${escapeHtml(p.id)}" data-player-name="${escapeHtml(p.name)}" data-h-click="adicionarGolJogadorDeBotao" data-a="${escapeHtml(JSON.stringify(["@this"]))}" ${!canAdd ? 'disabled' : ''} class="px-2.5 py-1 ${canAdd ? 'bg-cardLight hover:bg-neon-accent hover:text-black text-white' : 'bg-cardLight/40 text-slate-600 cursor-not-allowed'} font-bold rounded-lg transition text-xs">+ Gol</button>
               </div>
             </div>
           `;
@@ -2946,7 +2931,7 @@ function renderConteudoAtribuicaoGols(matchId) {
 
       <!-- Time Visitante -->
       <div class="space-y-1.5 pt-2 border-t border-borderLight/40">
-        <div class="text-[11px] font-bold uppercase tracking-wider flex items-center justify-between" style="color: ${awayColor};">
+        <div class="ds-c8c42c63-${awayColor.slice(1)} text-[11px] font-bold uppercase tracking-wider flex items-center justify-between">
           <span>${escapeHtml(m.away_team_name)} (Placar: ${m.away_score})</span>
           <span class="text-slate-400 font-normal lowercase">${awayGoalsAssigned}/${m.away_score} marcados</span>
         </div>
@@ -2962,9 +2947,9 @@ function renderConteudoAtribuicaoGols(matchId) {
               <div class="flex items-center gap-2">
                 <span class="text-neon-accent font-extrabold text-xs">${goalsCount} ⚽</span>
                 ${goalsCount > 0 ? `
-                  <button onclick="removerGolJogador('${m.id}', '${p.id}')" class="w-6 h-6 rounded-lg bg-cardLight hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 font-bold transition flex items-center justify-center text-xs">-</button>
+                  <button data-h-click="removerGolJogador" data-a="${escapeHtml(JSON.stringify([m.id, p.id]))}" class="w-6 h-6 rounded-lg bg-cardLight hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 font-bold transition flex items-center justify-center text-xs">-</button>
                 ` : ''}
-                <button onclick="adicionarGolJogador('${m.id}', '${p.id}', '${escapeHtml(p.name)}')" ${!canAdd ? 'disabled' : ''} class="px-2.5 py-1 ${canAdd ? 'bg-cardLight hover:bg-neon-accent hover:text-black text-white' : 'bg-cardLight/40 text-slate-600 cursor-not-allowed'} font-bold rounded-lg transition text-xs">+ Gol</button>
+                <button data-match-id="${escapeHtml(m.id)}" data-player-id="${escapeHtml(p.id)}" data-player-name="${escapeHtml(p.name)}" data-h-click="adicionarGolJogadorDeBotao" data-a="${escapeHtml(JSON.stringify(["@this"]))}" ${!canAdd ? 'disabled' : ''} class="px-2.5 py-1 ${canAdd ? 'bg-cardLight hover:bg-neon-accent hover:text-black text-white' : 'bg-cardLight/40 text-slate-600 cursor-not-allowed'} font-bold rounded-lg transition text-xs">+ Gol</button>
               </div>
             </div>
           `;
@@ -2974,9 +2959,14 @@ function renderConteudoAtribuicaoGols(matchId) {
 
     <div class="pt-3 border-t border-borderLight flex items-center justify-between">
       <span class="text-[11px] text-slate-400">Total: ${m.events.length} de ${totalGoalsInScore} gols atribuídos</span>
-      <button onclick="concluirAtribuicaoGols('${m.id}')" class="px-5 py-2 bg-neon-accent text-black font-extrabold text-xs rounded-xl shadow">Concluir</button>
+      <button data-h-click="concluirAtribuicaoGols" data-a="${escapeHtml(JSON.stringify([m.id]))}" class="px-5 py-2 bg-neon-accent text-black font-extrabold text-xs rounded-xl shadow">Concluir</button>
     </div>
   `;
+}
+
+// Os dados vão em data-* (escapados como texto) e são lidos via dataset: nada é interpolado em código JS.
+function adicionarGolJogadorDeBotao(botao) {
+  adicionarGolJogador(botao.dataset.matchId, botao.dataset.playerId, botao.dataset.playerName);
 }
 
 function adicionarGolJogador(matchId, playerId, playerName) {
@@ -2989,6 +2979,12 @@ function adicionarGolJogador(matchId, playerId, playerName) {
 
   const isHome = homePlayerIds.has(playerId);
   const isAway = awayPlayerIds.has(playerId);
+
+  // Gol só pode ser atribuído a quem está escalado na partida (snapshot de jogadores de cada time)
+  if (!isHome && !isAway) {
+    showToast("Este jogador não está escalado nesta partida.");
+    return;
+  }
 
   const homeGoalsAssigned = m.events.filter(e => homePlayerIds.has(e.player_id) && e.event_type === "goal").length;
   const awayGoalsAssigned = m.events.filter(e => awayPlayerIds.has(e.player_id) && e.event_type === "goal").length;
@@ -3030,7 +3026,7 @@ function adicionarGolJogador(matchId, playerId, playerName) {
   const previousScrollTop = scrollEl ? scrollEl.scrollTop : 0;
 
   renderConteudoAtribuicaoGols(matchId);
-  lucide.createIcons();
+  refreshIcons();
 
   const newScrollEl = document.getElementById("goals-players-scroll");
   if (newScrollEl) {
@@ -3052,7 +3048,7 @@ function removerGolJogador(matchId, playerId) {
   const previousScrollTop = scrollEl ? scrollEl.scrollTop : 0;
 
   renderConteudoAtribuicaoGols(matchId);
-  lucide.createIcons();
+  refreshIcons();
 
   const newScrollEl = document.getElementById("goals-players-scroll");
   if (newScrollEl) {
@@ -3082,9 +3078,13 @@ async function reabrirPartida(matchId) {
   );
   if (!confirmed) return;
 
+  if (!state.currentPelada || !state.currentPelada.code) {
+    showToast("Entre em uma pelada para alterar o histórico.");
+    return;
+  }
   try {
-    const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
-    const deleteUrl = pCode ? `/api/matches/${matchId}?pelada_code=${pCode}` : `/api/matches/${matchId}`;
+    const pCode = state.currentPelada.code;
+    const deleteUrl = `/api/matches/${matchId}?pelada_code=${pCode}`;
     const res = await fetch(deleteUrl, {
       method: "DELETE",
       headers: getAuthHeaders()
@@ -3134,9 +3134,13 @@ async function salvarPartidaFinalizada(matchId) {
     }
   }
 
+  if (!state.currentPelada || !state.currentPelada.code) {
+    showToast("Entre em uma pelada para salvar o resultado.");
+    return;
+  }
   try {
-    const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
-    const saveUrl = pCode ? `/api/matches/save?pelada_code=${pCode}` : "/api/matches/save";
+    const pCode = state.currentPelada.code;
+    const saveUrl = `/api/matches/save?pelada_code=${pCode}`;
     const res = await fetch(saveUrl, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -3179,9 +3183,10 @@ async function salvarPartidaFinalizada(matchId) {
 // DASHBOARD & HISTÓRICO SQLITE
 // ==============================
 async function atualizarDashboard() {
+  if (!state.currentPelada || !state.currentPelada.code) return;
   try {
-    const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
-    const url = pCode ? `/api/dashboard?pelada_code=${pCode}` : "/api/dashboard";
+    const pCode = state.currentPelada.code;
+    const url = `/api/dashboard?pelada_code=${pCode}`;
     const res = await fetch(url);
     const data = await res.json();
 
@@ -3255,7 +3260,7 @@ function renderLeaderboard(leaderboard) {
       <tr class="hover:bg-card/40 transition">
         <td class="py-2.5 font-bold flex items-center space-x-2">
           <span class="w-5 text-center ${posClass}">${idx + 1}</span>
-          <span style="color: ${teamColor};">${escapeHtml(t.name)}</span>
+          <span class="ds-c8c42c63-${teamColor.slice(1)}">${escapeHtml(t.name)}</span>
         </td>
         <td class="py-2.5 text-center text-slate-300">${t.matches}</td>
         <td class="py-2.5 text-center text-slate-300">${t.wins}</td>
@@ -3308,7 +3313,7 @@ function renderIndividualRankings(scorers, winners) {
 
   updateScorersScrollIndicator();
   updateWinnersScrollIndicator();
-  lucide.createIcons();
+  refreshIcons();
 }
 
 function updateScorersScrollIndicator() {
@@ -3569,7 +3574,7 @@ function selectAllChartPlayers(selectAll) {
   }
   syncChartPlayerCheckboxes();
   updateDashboardEvolutionChart();
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) refreshIcons();
 }
 
 function onToggleChartPlayerCheckbox(playerId, checked) {
@@ -3616,7 +3621,7 @@ function syncChartPlayerCheckboxes() {
           <img src="${markerSrc}" width="12" height="12" alt="" class="flex-shrink-0">
           <span class="text-slate-200 truncate font-medium">${escapeHtml(p.name)}</span>
         </span>
-        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="onToggleChartPlayerCheckbox('${pid}', this.checked)" class="rounded border-borderLight text-neon-accent focus:ring-0 cursor-pointer accent-[#00f59b]">
+        <input type="checkbox" ${isChecked ? 'checked' : ''} data-h-change="onToggleChartPlayerCheckbox" data-a="${escapeHtml(JSON.stringify([pid, "@checked"]))}" class="rounded border-borderLight text-neon-accent focus:ring-0 cursor-pointer accent-[#00f59b]">
       </label>
     `;
   }).join("");
@@ -3681,7 +3686,7 @@ function renderDashboardEvolutionChart(matches) {
 
   syncChartPlayerCheckboxes();
   updateDashboardEvolutionChart();
-  if (window.lucide) lucide.createIcons();
+  if (window.lucide) refreshIcons();
 }
 
 /* Série de evolução por jogador (usada pelo dashboard e pelo relatório PDF).
@@ -4001,19 +4006,19 @@ function buildHistoryPageHtml(matchesSlice) {
           </div>
 
           <div class="text-base font-extrabold flex items-center gap-3">
-            <span class="flex items-center gap-1.5" style="color: ${homeColor};">
+            <span class="ds-c8c42c63-${homeColor.slice(1)} flex items-center gap-1.5">
               ${m.winner_team_id === m.home_team_id ? '<span class="text-xs" title="Vencedor">🏆</span>' : ''}
               ${escapeHtml(m.home_team_name)}
             </span>
             <span class="px-2.5 py-0.5 rounded-lg bg-pitch border border-borderLight text-white font-black text-sm">${m.home_score} - ${m.away_score}</span>
-            <span class="flex items-center gap-1.5" style="color: ${awayColor};">
+            <span class="ds-c8c42c63-${awayColor.slice(1)} flex items-center gap-1.5">
               ${m.winner_team_id === m.away_team_id ? '<span class="text-xs" title="Vencedor">🏆</span>' : ''}
               ${escapeHtml(m.away_team_name)}
             </span>
           </div>
         </div>
 
-        <button onclick="verDetalhesPartida('${m.id}')" class="text-xs px-3 py-2 bg-surface hover:bg-card border border-borderLight rounded-xl text-slate-300 hover:text-white transition flex items-center justify-center gap-1.5 self-start md:self-auto">
+        <button data-h-click="verDetalhesPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" class="text-xs px-3 py-2 bg-surface hover:bg-card border border-borderLight rounded-xl text-slate-300 hover:text-white transition flex items-center justify-center gap-1.5 self-start md:self-auto">
           <i data-lucide="eye" class="w-3.5 h-3.5 text-neon-accent"></i>
           <span>Ver Integrantes & Detalhes</span>
         </button>
@@ -4111,7 +4116,7 @@ function renderMatchesHistory(matches) {
   }
 
   updateHistoryPaginationUI();
-  lucide.createIcons();
+  refreshIcons();
 }
 
 function mudarPaginaHistorico(delta) {
@@ -4172,7 +4177,7 @@ function mudarPaginaHistorico(delta) {
     slider.style.transition = 'none';
     slider.style.transform = 'translateX(0%)';
     slider.innerHTML = `<div id="history-matches-list" class="w-full shrink-0 space-y-3">${buildHistoryPageHtml(targetMatches)}</div>`;
-    lucide.createIcons();
+    refreshIcons();
     isHistorySliding = false;
     updateHistoryPaginationUI();
   }, 460);
@@ -4182,10 +4187,10 @@ async function verDetalhesPartida(matchId) {
   // Procura no estado local ou busca do backend
   let match = state.fixtures.find(m => m.id === matchId);
 
-  if (!match) {
+  if (!match && state.currentPelada && state.currentPelada.code) {
     try {
-      const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
-      const url = pCode ? `/api/matches?pelada_code=${pCode}` : "/api/matches";
+      const pCode = state.currentPelada.code;
+      const url = `/api/matches?pelada_code=${pCode}`;
       const res = await fetch(url);
       const list = await res.json();
       match = list.find(m => m.id === matchId);
@@ -4250,12 +4255,12 @@ async function verDetalhesPartida(matchId) {
         <span class="text-emerald-400 font-bold">${match.played_at || ''} (Horário de Brasília)</span>
       </div>
       <h3 class="text-2xl md:text-3xl font-black mt-2 flex items-center gap-2.5 flex-wrap">
-        <span style="color: ${homeColor};">${escapeHtml(match.home_team_name)}</span>
+        <span class="ds-c8c42c63-${homeColor.slice(1)}">${escapeHtml(match.home_team_name)}</span>
         <span class="text-white bg-pitch px-3 py-1 rounded-xl border border-borderLight text-lg md:text-xl font-black">${match.home_score} x ${match.away_score}</span>
-        <span style="color: ${awayColor};">${escapeHtml(match.away_team_name)}</span>
+        <span class="ds-c8c42c63-${awayColor.slice(1)}">${escapeHtml(match.away_team_name)}</span>
       </h3>
       <p class="text-sm md:text-base text-slate-300 mt-2 font-medium">
-        ${match.is_draw ? 'Empate registrado' : `Vencedor: 🏆 <span class="font-black text-base md:text-lg" style="color: ${winnerColor};">${escapeHtml(isHomeWinner ? match.home_team_name : match.away_team_name)}</span>`}
+        ${match.is_draw ? 'Empate registrado' : `Vencedor: 🏆 <span class="ds-c8c42c63-${winnerColor.slice(1)} font-black text-base md:text-lg">${escapeHtml(isHomeWinner ? match.home_team_name : match.away_team_name)}</span>`}
       </p>
     </div>
 
@@ -4269,7 +4274,7 @@ async function verDetalhesPartida(matchId) {
           : 'border-borderLight'
       }">
         <h4 class="font-bold text-base md:text-lg flex items-center justify-between pb-1 border-b border-borderLight/40">
-          <span style="color: ${homeColor};">${escapeHtml(match.home_team_name)}</span>
+          <span class="ds-c8c42c63-${homeColor.slice(1)}">${escapeHtml(match.home_team_name)}</span>
           ${isHomeWinner ? '<span class="text-xs text-emerald-400 font-extrabold uppercase bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">Venceu</span>' : ''}
           ${isHomeLoser ? '<span class="text-xs text-rose-400 font-extrabold uppercase bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">Perdeu</span>' : ''}
         </h4>
@@ -4287,7 +4292,7 @@ async function verDetalhesPartida(matchId) {
           : 'border-borderLight'
       }">
         <h4 class="font-bold text-base md:text-lg flex items-center justify-between pb-1 border-b border-borderLight/40">
-          <span style="color: ${awayColor};">${escapeHtml(match.away_team_name)}</span>
+          <span class="ds-c8c42c63-${awayColor.slice(1)}">${escapeHtml(match.away_team_name)}</span>
           ${isAwayWinner ? '<span class="text-xs text-emerald-400 font-extrabold uppercase bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">Venceu</span>' : ''}
           ${isAwayLoser ? '<span class="text-xs text-rose-400 font-extrabold uppercase bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">Perdeu</span>' : ''}
         </h4>
@@ -4298,12 +4303,12 @@ async function verDetalhesPartida(matchId) {
     </div>
 
     <div class="pt-3 border-t border-borderLight flex justify-end">
-      <button onclick="closeModal()" class="px-5 py-2.5 bg-cardLight hover:bg-slate-700 text-white font-bold text-sm md:text-base rounded-xl transition">Fechar</button>
+      <button data-h-click="closeModal" class="px-5 py-2.5 bg-cardLight hover:bg-slate-700 text-white font-bold text-sm md:text-base rounded-xl transition">Fechar</button>
     </div>
   `;
 
   modal.classList.remove("hidden");
-  lucide.createIcons();
+  refreshIcons();
 }
 
 function closeModal() {
@@ -4324,8 +4329,9 @@ async function limparHistorico() {
   if (!confirmed) return;
 
   try {
-    const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
-    const url = pCode ? `/api/matches?pelada_code=${pCode}` : "/api/matches";
+    if (!state.currentPelada || !state.currentPelada.code) return;
+    const pCode = state.currentPelada.code;
+    const url = `/api/matches?pelada_code=${pCode}`;
     const res = await fetch(url, {
       method: "DELETE",
       headers: getAuthHeaders()
@@ -4393,6 +4399,12 @@ function atualizarVisibilidadeControlesFormato() {
 
 let autoSaveConfigTimeout = null;
 
+// Envio do formulário de configurações: nunca recarrega a página
+function submitConfiguracoes(event) {
+  event.preventDefault();
+  autoSalvarConfiguracoes();
+}
+
 function autoSalvarConfiguracoes(immediate = false) {
   if (state.role !== 'admin') return;
 
@@ -4450,8 +4462,11 @@ async function salvarConfiguracoes(event) {
   state.config.alarm_sound = selectedAlarm;
 
   try {
-    const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
-    const url = pCode ? `/api/config?pelada_code=${pCode}` : "/api/config";
+    if (!state.currentPelada || !state.currentPelada.code) {
+      showToast("Entre em uma pelada para salvar as configurações.");
+      return;
+    }
+    const url = `/api/config?pelada_code=${state.currentPelada.code}`;
     const res = await fetch(url, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -4535,7 +4550,7 @@ function renderTeamBadge(teamName, teamIdOrColor = null, extraClasses = "") {
   const color = (teamIdOrColor && String(teamIdOrColor).startsWith("#"))
     ? teamIdOrColor
     : getTeamColor(teamIdOrColor || teamName);
-  return `<span class="font-extrabold inline-block ${extraClasses}" style="color: ${color};">${escapeHtml(teamName)}</span>`;
+  return `<span class="ds-c8c42c63-${color.slice(1)} font-extrabold inline-block ${extraClasses}">${escapeHtml(teamName)}</span>`;
 }
 
 /* ========================================================
@@ -4575,70 +4590,70 @@ function pdfTruncar(texto, max) {
 }
 
 function pdfIcone(nome, cor, tamanho) {
-  return `<i data-lucide="${nome}" width="${tamanho}" height="${tamanho}" style="color: ${cor};"></i>`;
+  return `<i class="ds-c8c42c63-${cor.slice(1)}" data-lucide="${nome}" width="${tamanho}" height="${tamanho}"></i>`;
 }
 
 function pdfFundo() {
   return `
-    <img src="/static/bg-pitch.jpg" alt="" style="position: absolute; top: 0; left: 0; width: 794px; height: 1123px; object-fit: cover; opacity: 0.85; z-index: 0;" />
-    <div style="position: absolute; top: 0; left: 0; width: 794px; height: 1123px; background: linear-gradient(to top, #080c14 15%, rgba(8,12,20,0.85) 60%, rgba(8,12,20,0.7) 100%); z-index: 1;"></div>
-    <div style="position: absolute; top: 0; left: 0; width: 794px; height: 1123px; background: radial-gradient(circle at center, transparent 0%, rgba(8,12,20,0.6) 60%, #080c14 100%); z-index: 1;"></div>`;
+    <img class="ds-09d0c408" src="/static/bg-pitch.jpg" alt="" />
+    <div class="ds-ab0efa33"></div>
+    <div class="ds-a20c2c9a"></div>`;
 }
 
 const PDF_BOLA_AJUSTE_Y = -11;
 
 function pdfCabecalho(nomePelada, codigo, geradoEm) {
   const codigoHtml = codigo
-    ? `<span style="font-size: 12px; line-height: 16px; font-weight: 800; color: ${PDF_CORES.destaque}; letter-spacing: 1px; white-space: nowrap;">#${escapeHtml(codigo)}</span>`
+    ? `<span class="ds-7061826e">#${escapeHtml(codigo)}</span>`
     : "";
   return `
-    <table style="width: 100%; border-collapse: collapse; border-bottom: 2px solid rgba(0, 245, 155, 0.4);"><tr>
-      <td style="width: 58px; vertical-align: middle; padding-bottom: 14px;">
-        <table style="width: 46px; height: 46px; border-collapse: separate; border-spacing: 0; background: linear-gradient(135deg, #00f59b 0%, #00b875 100%); border-radius: 12px;"><tr>
-          <td style="width: 46px; height: 46px; padding: 0; text-align: center; vertical-align: middle; font-size: 22px; line-height: 46px;"><span style="position: relative; top: ${PDF_BOLA_AJUSTE_Y}px;">⚽</span></td>
+    <table class="ds-960750ce"><tr>
+      <td class="ds-d6a28982">
+        <table class="ds-371bfc04"><tr>
+          <td class="ds-6bc17abc"><span class="ds-8398e345">⚽</span></td>
         </tr></table>
       </td>
-      <td style="vertical-align: middle; padding-bottom: 14px;">
-        <div style="font-size: 24px; line-height: 28px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; white-space: nowrap;">Fut<span style="color: ${PDF_CORES.destaque};">Match</span></div>
-        <div style="margin-top: 4px; font-size: 13px; line-height: 18px; color: ${PDF_CORES.textoSuave}; white-space: nowrap;">Relatório &amp; Estatísticas da Pelada: <strong style="color: #ffffff;">${escapeHtml(pdfTruncar(nomePelada, 28))}</strong>&nbsp;&nbsp;${codigoHtml}</div>
+      <td class="ds-4d58fd8f">
+        <div class="ds-288adda1">Fut<span class="ds-c6aa0a14">Match</span></div>
+        <div class="ds-71fff306">Relatório &amp; Estatísticas da Pelada: <strong class="ds-16f85fc0">${escapeHtml(pdfTruncar(nomePelada, 28))}</strong>&nbsp;&nbsp;${codigoHtml}</div>
       </td>
-      <td style="text-align: right; vertical-align: middle; padding-bottom: 14px; white-space: nowrap;">
-        <div style="font-size: 10px; line-height: 12px; text-transform: uppercase; letter-spacing: 1px; color: ${PDF_CORES.textoApagado}; font-weight: 700;">Gerado em</div>
-        <div style="margin-top: 4px; font-size: 12px; line-height: 16px; color: ${PDF_CORES.textoClaro}; font-weight: 600;">${geradoEm}</div>
+      <td class="ds-7901ac1e">
+        <div class="ds-71628b19">Gerado em</div>
+        <div class="ds-76462b6f">${geradoEm}</div>
       </td>
     </tr></table>`;
 }
 
 function pdfSecao(icone, cor, titulo, subtitulo, deslocamento = -8) {
   return `
-    <table style="border-collapse: collapse;"><tr>
-      <td style="width: 4px; height: 22px; padding: 0; background: ${cor}; border-radius: 2px;"></td>
-      <td style="width: 24px; height: 22px; padding: 0 0 0 10px; vertical-align: middle; color: ${cor};">${pdfIcone(icone, cor, 18)}</td>
-      <td style="height: 22px; padding: 0; vertical-align: middle; font-size: 16px; line-height: 22px; font-weight: 700; color: #ffffff; white-space: nowrap;"><span style="position: relative; top: ${deslocamento}px;">${titulo}</span></td>
+    <table class="ds-3a20740c"><tr>
+      <td class="ds-6988fb3a-${cor.slice(1)}"></td>
+      <td class="ds-f0b089a8-${cor.slice(1)}">${pdfIcone(icone, cor, 18)}</td>
+      <td class="ds-2aa9c472"><span class="ds-3884519e-${String(deslocamento).replace('-','m')}">${titulo}</span></td>
     </tr></table>
-    ${subtitulo ? `<div style="margin-top: 4px; font-size: 12px; line-height: 16px; color: ${PDF_CORES.textoSuave};">${subtitulo}</div>` : ""}
-    <div style="height: 1px; background: ${PDF_CORES.borda}; margin: 12px 0;"></div>`;
+    ${subtitulo ? `<div class="ds-6f59fd0c">${subtitulo}</div>` : ""}
+    <div class="ds-ce80f992"></div>`;
 }
 
 function pdfCard(conteudo) {
-  return `<div style="background: ${PDF_CORES.fundoCard}; border: 1px solid ${PDF_CORES.borda}; border-radius: 18px; padding: 18px 20px; box-sizing: border-box;">${conteudo}</div>`;
+  return `<div class="ds-d6c06699">${conteudo}</div>`;
 }
 
 function pdfKpi(rotulo, icone, cor, valor, sub, margemEsquerda, ehTexto) {
   return `
-    <div style="flex: 1; min-width: 0; box-sizing: border-box; margin-left: ${margemEsquerda}px; height: 116px; padding: 14px 18px; background: ${PDF_CORES.fundoCard}; border: 1px solid ${PDF_CORES.borda}; border-radius: 16px;">
-      <table style="width: 100%; border-collapse: collapse;"><tr>
-        <td style="font-size: 12px; line-height: 16px; font-weight: 500; color: ${PDF_CORES.textoSuave}; white-space: nowrap; vertical-align: middle;"><span style="position: relative; top: -4px;">${rotulo}</span></td>
-        <td style="width: 18px; text-align: right; vertical-align: middle; color: ${cor};">${pdfIcone(icone, cor, 16)}</td>
+    <div class="ds-05dcf9ec-${String(margemEsquerda).replace('-','m')}">
+      <table class="ds-b468078e"><tr>
+        <td class="ds-11af79c3"><span class="ds-357a6da9">${rotulo}</span></td>
+        <td class="ds-d0eb2ed6-${cor.slice(1)}">${pdfIcone(icone, cor, 16)}</td>
       </tr></table>
-      <div style="position: relative; top: -4px; margin-top: 0px; padding-bottom: 4px; line-height: 40px; font-size: ${ehTexto ? 22 : 30}px; font-weight: 900; color: #ffffff; white-space: nowrap;">${valor}</div>
-      <div style="position: relative; top: -4px; margin-top: 4px; font-size: 11px; line-height: 16px; color: ${PDF_CORES.textoSuave}; white-space: nowrap;">${sub}</div>
+      <div class="ds-d0c665f3-${(ehTexto ? 22 : 30)}">${valor}</div>
+      <div class="ds-1b064eb7">${sub}</div>
     </div>`;
 }
 
 function pdfTabelaClassificacao(leaderboard, corPorNome) {
-  const cabeca = (texto, extra = "") =>
-    `<th style="padding: 0 4px 8px 4px; font-size: 10px; line-height: 14px; font-weight: 700; text-transform: uppercase; color: ${PDF_CORES.textoSuave}; text-align: center; border-bottom: 1px solid ${PDF_CORES.borda}; ${extra}">${texto}</th>`;
+  const cabeca = (texto, classeExtra = "") =>
+    `<th class="ds-ccece863 ${classeExtra}">${texto}</th>`;
   const celula = `padding: 0 4px; height: 44px; font-size: 12px; line-height: 16px; text-align: center; vertical-align: middle; color: ${PDF_CORES.textoClaro}; border-bottom: 1px solid ${PDF_CORES.bordaSuave};`;
 
   const linhas = leaderboard.slice(0, 6).map((t, idx) => {
@@ -4648,26 +4663,26 @@ function pdfTabelaClassificacao(leaderboard, corPorNome) {
     const corPos = idx === 0 ? PDF_CORES.ouro : idx === 1 ? PDF_CORES.prata : idx === 2 ? PDF_CORES.bronze : PDF_CORES.textoSuave;
     return `
       <tr>
-        <td style="height: 44px; padding: 14px 8px 0 0; vertical-align: top; text-align: left; line-height: 16px; white-space: nowrap; border-bottom: 1px solid ${PDF_CORES.bordaSuave};">
-          <span style="position: relative; top: -3px; font-size: 12px; font-weight: 800; color: ${corPos}; margin-right: 8px;">${idx + 1}º</span><span style="position: relative; top: -3px; font-size: 13px; font-weight: 800; color: ${cor};">${escapeHtml(pdfTruncar(t.name, 20))}</span>
+        <td class="ds-ddb2ac36">
+          <span class="ds-39e9d999-${corPos.slice(1)}">${idx + 1}º</span><span class="ds-f90571e4-${cor.slice(1)}">${escapeHtml(pdfTruncar(t.name, 20))}</span>
         </td>
-        <td style="${celula}">${t.matches}</td>
-        <td style="${celula} color: #34d399; font-weight: 600;">${t.wins}</td>
-        <td style="${celula}">${t.draws}</td>
-        <td style="${celula} color: ${PDF_CORES.derrota};">${t.losses}</td>
-        <td style="${celula}">${t.goals_scored}</td>
-        <td style="${celula}">${t.goals_conceded}</td>
-        <td style="${celula} color: ${sgCor}; font-weight: 600;">${sg > 0 ? "+" + sg : sg}</td>
-        <td style="${celula} color: ${PDF_CORES.destaque}; font-weight: 900; font-size: 14px;"><span style="position: relative; top: -1px;">${t.points}</span></td>
+        <td class="ds-78e1bc9f">${t.matches}</td>
+        <td class="ds-c8015e50">${t.wins}</td>
+        <td class="ds-78e1bc9f">${t.draws}</td>
+        <td class="ds-39dde90f">${t.losses}</td>
+        <td class="ds-78e1bc9f">${t.goals_scored}</td>
+        <td class="ds-78e1bc9f">${t.goals_conceded}</td>
+        <td class="ds-6cb6bc19-${sgCor.slice(1)}">${sg > 0 ? "+" + sg : sg}</td>
+        <td class="ds-6933334d"><span class="ds-65ec726f">${t.points}</span></td>
       </tr>`;
   }).join("");
 
   return `
-    <table style="width: 100%; border-collapse: collapse;">
+    <table class="ds-b468078e">
       <thead><tr>
-        ${cabeca("Equipe", "text-align: left;")}${cabeca("J")}${cabeca("V")}${cabeca("E")}${cabeca("D")}${cabeca("GP")}${cabeca("GC")}${cabeca("SG")}${cabeca("PTS", `color: ${PDF_CORES.destaque};`)}
+        ${cabeca("Equipe", "ds-26cef2c5")}${cabeca("J")}${cabeca("V")}${cabeca("E")}${cabeca("D")}${cabeca("GP")}${cabeca("GC")}${cabeca("SG")}${cabeca("PTS", "ds-13b8ff02")}
       </tr></thead>
-      <tbody>${linhas || `<tr><td colspan="9" style="height: 40px; text-align: center; font-size: 12px; color: ${PDF_CORES.textoApagado};">Nenhuma partida finalizada até o momento.</td></tr>`}</tbody>
+      <tbody>${linhas || `<tr><td class="ds-87e7c578" colspan="9">Nenhuma partida finalizada até o momento.</td></tr>`}</tbody>
     </table>`;
 }
 
@@ -4676,41 +4691,41 @@ function pdfColunaRanking(titulo, icone, cor, linhas, vazio) {
   const ESPACO = 8;
   const LARGURA_PILULA = 96;
   const nomes = linhas.map((l) => `
-    <tr><td style="height: ${ALTURA}px; padding: 0; vertical-align: middle; font-size: 12px; line-height: ${ALTURA}px; font-weight: 600; color: ${PDF_CORES.texto}; white-space: nowrap;"><span style="position: relative; top: -6px; font-weight: 800; color: ${PDF_CORES.textoSuave};">${l.pos}.</span><span style="position: relative; top: -6px;"> ${escapeHtml(pdfTruncar(l.nome, 18))}</span></td></tr>
-    <tr><td style="height: ${ESPACO}px; padding: 0; font-size: 0; line-height: 0;">&nbsp;</td></tr>`).join("");
+    <tr><td class="ds-3daef0d9"><span class="ds-111aa6b4">${l.pos}.</span><span class="ds-5c2dd240"> ${escapeHtml(pdfTruncar(l.nome, 18))}</span></td></tr>
+    <tr><td class="ds-9ec85790">&nbsp;</td></tr>`).join("");
   // Pílula em SVG: retângulo arredondado e texto centralizado por atributo (sem depender de caixa CSS)
   const pilulas = linhas.map((l) => `
-    <tr><td style="height: ${ALTURA}px; padding: 0; font-size: 0; line-height: 0;">
-      <div style="position: relative; width: ${LARGURA_PILULA}px; height: ${ALTURA}px;">
-        <svg width="${LARGURA_PILULA}" height="${ALTURA}" viewBox="0 0 ${LARGURA_PILULA} ${ALTURA}" style="position: absolute; top: 0; left: 0; display: block;">
+    <tr><td class="ds-c70eeb2e">
+      <div class="ds-552290b1">
+        <svg class="ds-dd0c3c24" width="${LARGURA_PILULA}" height="${ALTURA}" viewBox="0 0 ${LARGURA_PILULA} ${ALTURA}">
           <rect x="0" y="0" width="${LARGURA_PILULA}" height="${ALTURA}" rx="${ALTURA / 2}" ry="${ALTURA / 2}" fill="${l.fundo}"/>
         </svg>
-        <div style="position: absolute; top: -8px; left: 0; width: ${LARGURA_PILULA}px; height: ${ALTURA}px; line-height: ${ALTURA}px; text-align: center; font-family: 'Outfit', sans-serif; font-size: 11px; font-weight: 800; color: ${l.cor}; white-space: nowrap;">${escapeHtml(l.texto)}</div>
+        <div class="ds-9a1591bb-${l.cor.slice(1)}">${escapeHtml(l.texto)}</div>
       </div>
     </td></tr>
-    <tr><td style="height: ${ESPACO}px; padding: 0; font-size: 0; line-height: 0;">&nbsp;</td></tr>`).join("");
+    <tr><td class="ds-9ec85790">&nbsp;</td></tr>`).join("");
 
   const corpo = linhas.length
-    ? `<table style="width: 100%; border-collapse: collapse;"><tr>
-         <td style="vertical-align: top; padding: 0;"><table style="width: 100%; border-collapse: collapse;">${nomes}</table></td>
-         <td style="width: ${LARGURA_PILULA}px; vertical-align: top; padding: 0 0 0 12px;"><table style="border-collapse: collapse;">${pilulas}</table></td>
+    ? `<table class="ds-b468078e"><tr>
+         <td class="ds-d31a2949"><table class="ds-b468078e">${nomes}</table></td>
+         <td class="ds-896ff6fc"><table class="ds-3a20740c">${pilulas}</table></td>
        </tr></table>`
-    : `<div style="font-size: 11px; line-height: 16px; color: ${PDF_CORES.textoApagado};">${vazio}</div>`;
+    : `<div class="ds-49f0db53">${vazio}</div>`;
 
   return `
-    <table style="border-collapse: collapse; margin-bottom: 10px;"><tr>
-      <td style="width: 3px; height: 16px; padding: 0; background: ${cor}; border-radius: 2px;"></td>
-      <td style="width: 22px; height: 16px; padding: 0 0 0 8px; vertical-align: middle; color: ${cor};">${pdfIcone(icone, cor, 15)}</td>
-      <td style="height: 16px; padding: 0; vertical-align: middle; font-size: 11px; line-height: 16px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: ${PDF_CORES.textoClaro}; white-space: nowrap;"><span style="position: relative; top: -6px;">${titulo}</span></td>
+    <table class="ds-3cfad0aa"><tr>
+      <td class="ds-c59526ae-${cor.slice(1)}"></td>
+      <td class="ds-8b814190-${cor.slice(1)}">${pdfIcone(icone, cor, 15)}</td>
+      <td class="ds-f7f24ccb"><span class="ds-5c2dd240">${titulo}</span></td>
     </tr></table>
     ${corpo}`;
 }
 
 function pdfRodape(textoPagina) {
   return `
-    <table style="width: 100%; border-collapse: collapse; border-top: 1px solid ${PDF_CORES.borda};"><tr>
-      <td style="padding-top: 12px; font-size: 10px; line-height: 14px; color: ${PDF_CORES.textoApagado}; white-space: nowrap;">FutMatch — Gestão Inteligente e Estatísticas de Peladas</td>
-      <td style="padding-top: 12px; text-align: right; font-size: 10px; line-height: 14px; font-weight: 600; color: ${PDF_CORES.destaque}; white-space: nowrap;">Folha oficial de resumo • ${textoPagina}</td>
+    <table class="ds-a2655d7b"><tr>
+      <td class="ds-5c638ac5">FutMatch — Gestão Inteligente e Estatísticas de Peladas</td>
+      <td class="ds-e8994c9f">Folha oficial de resumo • ${textoPagina}</td>
     </tr></table>`;
 }
 
@@ -4750,17 +4765,17 @@ function pdfListaGols(resumo) {
   const MAX = 6;
   const linhas = resumo.itens.slice(0, MAX).map((i) => `
     <tr>
-      <td style="padding: 1px 0; font-size: 11px; line-height: 15px; white-space: nowrap; color: ${i.contra ? PDF_CORES.derrota : PDF_CORES.texto};">${escapeHtml(pdfTruncar(i.nome, 13))}${i.contra ? ` <span style="font-size: 10px; color: ${PDF_CORES.derrota};">(contra)</span>` : ""}</td>
-      <td style="width: 1%; padding: 1px 0 1px 6px; text-align: right; font-size: 11px; line-height: 15px; font-weight: 800; color: ${PDF_CORES.destaque}; white-space: nowrap;">${i.n > 1 ? "×" + i.n : ""}</td>
+      <td class="${(i.contra) ? 'ds-478c010b-f87171' : 'ds-478c010b-f1f5f9'}">${escapeHtml(pdfTruncar(i.nome, 13))}${i.contra ? ` <span class="ds-98d959ab">(contra)</span>` : ""}</td>
+      <td class="ds-baa59f8c">${i.n > 1 ? "×" + i.n : ""}</td>
     </tr>`).join("");
   const resto = resumo.itens.length > MAX
-    ? `<tr><td colspan="2" style="font-size: 10px; line-height: 14px; color: ${PDF_CORES.textoApagado};">+${resumo.itens.length - MAX} jogador(es)</td></tr>` : "";
+    ? `<tr><td class="ds-efc1fd63" colspan="2">+${resumo.itens.length - MAX} jogador(es)</td></tr>` : "";
   const semAutor = resumo.semAutor > 0
-    ? `<tr><td colspan="2" style="font-size: 10px; line-height: 14px; color: ${PDF_CORES.textoApagado};">+${resumo.semAutor} gol(s) sem autor</td></tr>` : "";
+    ? `<tr><td class="ds-efc1fd63" colspan="2">+${resumo.semAutor} gol(s) sem autor</td></tr>` : "";
   const vazio = !resumo.itens.length && !resumo.semAutor
-    ? `<tr><td colspan="2" style="font-size: 11px; line-height: 15px; color: ${PDF_CORES.textoApagado};">Sem gols</td></tr>` : "";
+    ? `<tr><td class="ds-caa640fd" colspan="2">Sem gols</td></tr>` : "";
 
-  return `<table style="width: 100%; border-collapse: collapse;">${linhas}${resto}${semAutor}${vazio}</table>`;
+  return `<table class="ds-b468078e">${linhas}${resto}${semAutor}${vazio}</table>`;
 }
 
 function pdfCelulaPartida(partida, corPorNome) {
@@ -4770,35 +4785,35 @@ function pdfCelulaPartida(partida, corPorNome) {
   const dataHora = typeof partida.played_at === "string" ? partida.played_at.slice(0, 16) : "";
 
   return `
-    <td style="vertical-align: top; padding: 10px 12px; background: ${PDF_CORES.fundoCard}; border: 1px solid ${PDF_CORES.borda}; border-radius: 14px;">
-      <table style="width: 100%; border-collapse: collapse;"><tr>
-        <td style="font-size: 10px; line-height: 14px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: ${PDF_CORES.textoSuave}; white-space: nowrap;">Rodada ${partida.round_number}</td>
-        <td style="text-align: right; font-size: 10px; line-height: 14px; color: ${PDF_CORES.textoApagado}; white-space: nowrap;">${escapeHtml(dataHora)}</td>
+    <td class="ds-54f98b95">
+      <table class="ds-b468078e"><tr>
+        <td class="ds-eeccd5b4">Rodada ${partida.round_number}</td>
+        <td class="ds-6844abe7">${escapeHtml(dataHora)}</td>
       </tr></table>
 
-      <table style="width: 100%; border-collapse: collapse; margin-top: 8px;"><tr>
-        <td style="text-align: left; vertical-align: middle; font-size: 12px; line-height: 16px; font-weight: 800; white-space: nowrap; color: ${cCasa};">${escapeHtml(pdfTruncar(partida.home_team_name, 14))}</td>
-        <td style="text-align: right; vertical-align: middle; font-size: 12px; line-height: 16px; font-weight: 800; white-space: nowrap; color: ${cFora};">${escapeHtml(pdfTruncar(partida.away_team_name, 14))}</td>
+      <table class="ds-8a9450c9"><tr>
+        <td class="ds-9902f634-${cCasa.slice(1)}">${escapeHtml(pdfTruncar(partida.home_team_name, 14))}</td>
+        <td class="ds-9efea815-${cFora.slice(1)}">${escapeHtml(pdfTruncar(partida.away_team_name, 14))}</td>
       </tr></table>
-      <div style="margin-top: 4px; text-align: center; font-size: 20px; line-height: 26px; font-weight: 900; color: #ffffff; white-space: nowrap;">${partida.home_score}<span style="font-weight: 600; color: ${PDF_CORES.textoApagado};"> - </span>${partida.away_score}</div>
+      <div class="ds-55b414aa">${partida.home_score}<span class="ds-dd5da918"> - </span>${partida.away_score}</div>
 
-      <div style="height: 1px; background: ${PDF_CORES.borda}; margin: 8px 0 10px 0;"></div>
+      <div class="ds-ee329cbd"></div>
 
-      <table style="width: 100%; border-collapse: collapse; table-layout: fixed;"><tr>
-        <td style="width: 50%; vertical-align: top; padding-right: 8px;">${pdfListaGols(resumo.casa)}</td>
-        <td style="width: 50%; vertical-align: top; padding-left: 8px; border-left: 1px solid ${PDF_CORES.borda};">${pdfListaGols(resumo.fora)}</td>
+      <table class="ds-4523e30d"><tr>
+        <td class="ds-298cc1dd">${pdfListaGols(resumo.casa)}</td>
+        <td class="ds-1db2f04e">${pdfListaGols(resumo.fora)}</td>
       </tr></table>
     </td>`;
 }
 
 function pdfTituloRodada(rodada, continuacao) {
   const sufixo = continuacao
-    ? ` <span style="font-size: 12px; font-weight: 600; color: ${PDF_CORES.textoSuave};">(continuação)</span>`
+    ? ` <span class="ds-d4eaba19">(continuação)</span>`
     : "";
   return `
-    <div style="padding: 6px 0 12px 0;">
-      <table style="border-collapse: collapse;"><tr>
-        <td style="padding: 0 0 8px 0; border-bottom: 2px solid ${PDF_CORES.destaqueSublinhado}; font-size: 18px; line-height: 24px; font-weight: 800; color: #ffffff; white-space: nowrap;">Rodada ${rodada}${sufixo}</td>
+    <div class="ds-48d56994">
+      <table class="ds-3a20740c"><tr>
+        <td class="ds-9ffc0c7d">Rodada ${rodada}${sufixo}</td>
       </tr></table>
     </div>`;
 }
@@ -4807,8 +4822,8 @@ function pdfLinhaCards(celulas) {
   const cartoes = [...celulas];
   while (cartoes.length < 3) cartoes.push("<td></td>");
   return `
-    <div style="padding-bottom: 12px;">
-      <table style="width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 12px 0; margin: 0 -12px;"><tr>${cartoes.join("")}</tr></table>
+    <div class="ds-0e8026b3">
+      <table class="ds-9fcde97d"><tr>${cartoes.join("")}</tr></table>
     </div>`;
 }
 
@@ -4952,13 +4967,13 @@ async function pdfGraficoEvolucao(metrica) {
    que vai para uma folha extra quando não cabe, igual ao histórico. */
 function pdfTopoResumo(d) {
   const kpis = `
-    <div style="display: flex;">
+    <div class="ds-c40d127c">
       ${pdfKpi("Partidas Jogadas", "flag", PDF_CORES.destaque, d.totalPartidas, "&nbsp;", 0, false)}
-      ${pdfKpi("Total de Gols", "goal", PDF_CORES.destaque, d.totalGols, `Média: <strong style="color: ${PDF_CORES.destaque};">${d.media}</strong> por partida`, 12, false)}
+      ${pdfKpi("Total de Gols", "goal", PDF_CORES.destaque, d.totalGols, `Média: <strong class="ds-c6aa0a14">${d.media}</strong> por partida`, 12, false)}
       ${pdfKpi("Artilheiro Máximo", "award", PDF_CORES.ouro, pdfTruncar(d.artilheiro, 15), `${d.artilheiroGols} gols marcados`, 12, true)}
       ${pdfKpi("Maior Vencedor", "crown", PDF_CORES.amarelo, pdfTruncar(d.vencedor, 15), `${d.vencedorVitorias} vitórias (${d.vencedorTaxa}%)`, 12, true)}
     </div>`;
-  return `${pdfCabecalho(d.nomePelada, d.codigo, d.geradoEm)}<div style="padding-top: 12px;">${kpis}</div>`;
+  return `${pdfCabecalho(d.nomePelada, d.codigo, d.geradoEm)}<div class="ds-1dd9a5e2">${kpis}</div>`;
 }
 
 /* Legenda em grade (6 colunas) acima do gráfico: cresce com os jogadores sem invadir o plot. */
@@ -4967,9 +4982,9 @@ function pdfLegendaGrafico(itens) {
   const linhas = [];
   for (let i = 0; i < itens.length; i += COLUNAS) linhas.push(itens.slice(i, i + COLUNAS));
   const celula = (item) => item
-    ? `<td style="padding: 3px 2px; font-size: 10px; line-height: 14px; font-weight: 600; color: ${PDF_CORES.textoSuave}; white-space: nowrap; overflow: hidden;">${item.marcador ? `<img src="${item.marcador}" alt="" width="10" height="10" style="display: inline-block; vertical-align: -1px; margin-right: 4px;" />` : ""}${escapeHtml(pdfTruncar(item.nome, 14))}</td>`
+    ? `<td class="ds-7d44fd3a">${item.marcador ? `<img class="ds-cee4420b" src="${item.marcador}" alt="" width="10" height="10" />` : ""}${escapeHtml(pdfTruncar(item.nome, 14))}</td>`
     : `<td></td>`;
-  return `<table style="width: 100%; border-collapse: collapse; table-layout: fixed;">${linhas.map((linha) => {
+  return `<table class="ds-4523e30d">${linhas.map((linha) => {
     const preenchida = [...linha];
     while (preenchida.length < COLUNAS) preenchida.push(null);
     return `<tr>${preenchida.map(celula).join("")}</tr>`;
@@ -4978,8 +4993,8 @@ function pdfLegendaGrafico(itens) {
 
 function pdfCardGrafico(titulo, icone, cor, grafico) {
   const corpo = grafico
-    ? `${pdfLegendaGrafico(grafico.legenda)}<div style="padding-top: 10px;"><img src="${grafico.imagem}" alt="" style="display: block; width: 670px; height: 200px;" /></div>`
-    : `<div style="height: 200px; line-height: 200px; text-align: center; font-size: 12px; color: ${PDF_CORES.textoApagado};">Sem dados para exibir.</div>`;
+    ? `${pdfLegendaGrafico(grafico.legenda)}<div class="ds-4d5aeaa1"><img class="ds-942ecd31" src="${grafico.imagem}" alt="" /></div>`
+    : `<div class="ds-7c123538">Sem dados para exibir.</div>`;
   return pdfCard(pdfSecao(icone, cor, titulo, "", -8) + corpo);
 }
 
@@ -4991,9 +5006,9 @@ function pdfBlocosResumo(d) {
 
   const destaques = pdfCard(
     pdfSecao("flame", PDF_CORES.ouro, "Destaques Individuais", "Quem mais balançou as redes e quem mais venceu") +
-    `<table style="width: 100%; border-collapse: collapse;"><tr>
-       <td style="width: 50%; vertical-align: top; padding-right: 12px;">${pdfColunaRanking("Top goleadores", "goal", PDF_CORES.destaque, d.artilheiros, "Nenhum gol atribuído ainda.")}</td>
-       <td style="width: 50%; vertical-align: top; padding-left: 12px; border-left: 1px solid ${PDF_CORES.borda};">${pdfColunaRanking("Mais vitoriosos (taxa de vitória)", "crown", PDF_CORES.amarelo, d.vitoriosos, "Sem jogos concluídos.")}</td>
+    `<table class="ds-b468078e"><tr>
+       <td class="ds-a1be0881">${pdfColunaRanking("Top goleadores", "goal", PDF_CORES.destaque, d.artilheiros, "Nenhum gol atribuído ainda.")}</td>
+       <td class="ds-28dd0841">${pdfColunaRanking("Mais vitoriosos (taxa de vitória)", "crown", PDF_CORES.amarelo, d.vitoriosos, "Sem jogos concluídos.")}</td>
      </tr></table>`
   );
 
@@ -5001,7 +5016,7 @@ function pdfBlocosResumo(d) {
   const media = pdfCardGrafico("Média de gols", "goal", PDF_CORES.destaque, d.graficos.media);
 
   // padding-top (e não margin-top) para que a medição do bloco inclua o espaçamento
-  return [classificacao, destaques, aproveitamento, media].map((html) => `<div style="padding-top: 12px;">${html}</div>`);
+  return [classificacao, destaques, aproveitamento, media].map((html) => `<div class="ds-1dd9a5e2">${html}</div>`);
 }
 
 /* Agrupa blocos (já medidos) em folhas: a primeira respeita a altura do topo e as demais, a do cabeçalho. */
@@ -5027,8 +5042,8 @@ function pdfAgruparBlocos(blocos, disponivelPrimeira, disponivelDemais) {
 function pdfPaginaHistorico(conteudo, numero, total, subtitulo) {
   return `
     ${pdfSecao("history", PDF_CORES.destaque, "Histórico Completo de Partidas", subtitulo, -9)}
-    <div style="margin-top: 4px;">${conteudo}</div>
-    <div style="margin-top: auto;">${pdfRodape(`Página ${numero} de ${total}`)}</div>`;
+    <div class="ds-6b1f0d97">${conteudo}</div>
+    <div class="ds-b41ae4d5">${pdfRodape(`Página ${numero} de ${total}`)}</div>`;
 }
 
 async function pdfCapturarPagina(conteudo) {
@@ -5044,15 +5059,15 @@ async function pdfCapturarPagina(conteudo) {
   el.style.color = PDF_CORES.texto;
   el.style.backgroundColor = "#080c14";
   el.innerHTML = `
-    <div style="position: relative; width: 794px; height: 1123px; overflow: hidden; padding: 36px 40px; box-sizing: border-box;">
+    <div class="ds-564caf2c">
       ${pdfFundo()}
-      <div style="position: relative; z-index: 2; display: flex; flex-direction: column; height: 1051px;">${conteudo}</div>
+      <div class="ds-5898c22e">${conteudo}</div>
     </div>`;
   document.body.appendChild(el);
 
   try {
     if (window.lucide && typeof window.lucide.createIcons === "function") {
-      window.lucide.createIcons();
+      window.refreshIcons();
     }
     const imagens = Array.from(el.querySelectorAll("img"));
     await Promise.all(imagens.map((img) => img.complete ? null : new Promise((res) => { img.onload = res; img.onerror = res; })));
@@ -5088,18 +5103,23 @@ async function exportarRelatorioPDF() {
     return;
   }
 
+  if (!state.currentPelada || !state.currentPelada.code) {
+    await showCustomAlert("Entre em uma pelada para gerar o relatório em PDF.", "Aviso");
+    return;
+  }
+
   try {
     if (btn) btn.disabled = true;
     if (btnText) btnText.textContent = "Gerando...";
 
     // 1. Dados: dashboard (KPIs e destaques), partidas (histórico) e pelada (cores dos times)
-    const pCode = (state.currentPelada && state.currentPelada.code) ? state.currentPelada.code : "";
-    const dashUrl = pCode ? `/api/dashboard?pelada_code=${pCode}` : "/api/dashboard";
-    const matchesUrl = pCode ? `/api/matches?pelada_code=${pCode}` : "/api/matches";
+    const pCode = state.currentPelada.code;
+    const dashUrl = `/api/dashboard?pelada_code=${pCode}`;
+    const matchesUrl = `/api/matches?pelada_code=${pCode}`;
     const [dash, partidasBrutas, info] = await Promise.all([
       fetch(dashUrl).then((r) => r.json()),
       fetch(matchesUrl).then((r) => r.json()),
-      pCode ? fetch(`/api/peladas/${pCode}`).then((r) => r.json()) : Promise.resolve({}),
+      fetch(`/api/peladas/${pCode}`).then((r) => r.json()),
     ]);
     const pName = (info && info.name) || (state.currentPelada && state.currentPelada.name) || "";
 
@@ -5200,12 +5220,12 @@ async function exportarRelatorioPDF() {
     paginasResumo.forEach((grupo, i) => {
       const topo = i === 0 ? topoResumo : cabecalhoSo;
       const corpo = grupo.map((b) => b.html).join("");
-      paginas.push(`${topo}${corpo}<div style="margin-top: auto;">${pdfRodape(`Página ${i + 1} de ${totalPaginas}`)}</div>`);
+      paginas.push(`${topo}${corpo}<div class="ds-b41ae4d5">${pdfRodape(`Página ${i + 1} de ${totalPaginas}`)}</div>`);
     });
     paginasHistorico.forEach((pagina, i) => {
       const conteudo = pagina.length
         ? pagina.map((u) => u.html).join("")
-        : pdfCard(`<div style="padding: 24px 0; text-align: center; font-size: 12px; color: ${PDF_CORES.textoApagado};">Nenhuma partida finalizada até o momento.</div>`);
+        : pdfCard(`<div class="ds-7fef9661">Nenhuma partida finalizada até o momento.</div>`);
       paginas.push(pdfPaginaHistorico(conteudo, paginasResumo.length + i + 1, totalPaginas, subtitulo));
     });
 

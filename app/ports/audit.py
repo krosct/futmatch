@@ -28,3 +28,7 @@ class AuditRepositoryPort(ABC):
     @abstractmethod
     async def count_audit_logs(self, pelada_code: Optional[str] = None) -> int:
         pass
+
+    @abstractmethod
+    async def purge_older_than(self, created_at_ts: float) -> int:
+        pass

@@ -1,4 +1,5 @@
 import json
+import re
 import aiosqlite
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone, timedelta
@@ -6,6 +7,35 @@ from app.domain.models import Match, SessionConfig, PeladaSession
 from app.ports.repository import MatchRepositoryPort
 
 BRT = timezone(timedelta(hours=-3))
+
+# A chave é composta: o mesmo id pode existir em peladas diferentes sem uma sobrescrever a outra.
+MATCHES_SCHEMA = """
+    CREATE TABLE IF NOT EXISTS matches (
+        pelada_code TEXT NOT NULL DEFAULT '',
+        id TEXT NOT NULL,
+        round_number INTEGER,
+        home_team_id TEXT,
+        home_team_name TEXT,
+        away_team_id TEXT,
+        away_team_name TEXT,
+        home_score INTEGER,
+        away_score INTEGER,
+        home_players TEXT,
+        away_players TEXT,
+        events TEXT,
+        winner_team_id TEXT,
+        is_draw INTEGER,
+        finished INTEGER,
+        played_at TEXT,
+        notes TEXT,
+        PRIMARY KEY (pelada_code, id)
+    )
+"""
+MATCH_COLUMNS = (
+    "pelada_code", "id", "round_number", "home_team_id", "home_team_name", "away_team_id",
+    "away_team_name", "home_score", "away_score", "home_players", "away_players", "events",
+    "winner_team_id", "is_draw", "finished", "played_at", "notes",
+)
 
 class SQLiteMatchRepository(MatchRepositoryPort):
     def __init__(self, db_path: str = "futmatch.db"):
@@ -37,32 +67,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             except Exception:
                 pass
 
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS matches (
-                    id TEXT PRIMARY KEY,
-                    round_number INTEGER,
-                    home_team_id TEXT,
-                    home_team_name TEXT,
-                    away_team_id TEXT,
-                    away_team_name TEXT,
-                    home_score INTEGER,
-                    away_score INTEGER,
-                    home_players TEXT,
-                    away_players TEXT,
-                    events TEXT,
-                    winner_team_id TEXT,
-                    is_draw INTEGER,
-                    finished INTEGER,
-                    played_at TEXT,
-                    notes TEXT,
-                    pelada_code TEXT DEFAULT ''
-                )
-            """)
-            # Migração caso a coluna pelada_code não exista
-            try:
-                await db.execute("ALTER TABLE matches ADD COLUMN pelada_code TEXT DEFAULT ''")
-            except Exception:
-                pass
+            await self._migrate_matches_table(db)
 
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS configs (
@@ -80,6 +85,36 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             """)
             await db.commit()
 
+    async def _migrate_matches_table(self, db: aiosqlite.Connection) -> None:
+        """Cria ou reconstrói `matches` com chave (pelada_code, id), preservando as linhas existentes."""
+        cursor = await db.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'matches'")
+        row = await cursor.fetchone()
+        if row is None:
+            await db.execute(MATCHES_SCHEMA)
+            return
+        normalized_sql = re.sub(r"\s+", "", row[0] or "").lower()
+        if "primarykey(pelada_code,id)" in normalized_sql:
+            return
+
+        cursor = await db.execute("PRAGMA table_info(matches)")
+        existing = {r[1] for r in await cursor.fetchall()}
+        source = ", ".join(
+            ("COALESCE(pelada_code, '')" if c == "pelada_code" else c) if c in existing else ("''" if c == "pelada_code" else "NULL")
+            for c in MATCH_COLUMNS
+        )
+        await db.execute("BEGIN")
+        try:
+            await db.execute("ALTER TABLE matches RENAME TO matches_legacy")
+            await db.execute(MATCHES_SCHEMA)
+            await db.execute(
+                f"INSERT INTO matches ({', '.join(MATCH_COLUMNS)}) SELECT {source} FROM matches_legacy"
+            )
+            await db.execute("DROP TABLE matches_legacy")
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+
     async def create_pelada(self, code: str, password_hash: str, name: str) -> PeladaSession:
         created_at = datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S")
         clean_name = name.strip()
@@ -94,7 +129,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
         }
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT OR REPLACE INTO peladas (code, password_hash, created_at, name, players, teams, fixtures, config, parent_code)
+                INSERT INTO peladas (code, password_hash, created_at, name, players, teams, fixtures, config, parent_code)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
             """, (
                 code.upper(),
@@ -187,27 +222,27 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             await db.commit()
             return cursor.rowcount > 0
 
-    async def save_pelada_state(self, code: str, players: List[Dict[str, Any]], teams: List[Dict[str, Any]], fixtures: List[Dict[str, Any]], config: Dict[str, Any]) -> None:
+    async def save_pelada_state(self, code: str, players: List[Dict[str, Any]], teams: List[Dict[str, Any]], fixtures: List[Dict[str, Any]]) -> None:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 UPDATE peladas
-                SET players = ?, teams = ?, fixtures = ?, config = ?
+                SET players = ?, teams = ?, fixtures = ?
                 WHERE code = ?
             """, (
                 json.dumps(players, ensure_ascii=False),
                 json.dumps(teams, ensure_ascii=False),
                 json.dumps(fixtures, ensure_ascii=False),
-                json.dumps(config, ensure_ascii=False),
                 code.upper()
             ))
             await db.commit()
 
-    async def save_match(self, match: Match, pelada_code: Optional[str] = None) -> None:
+    async def save_match(self, match: Match, pelada_code: str) -> None:
         if not match.played_at:
             match.played_at = datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S")
 
-        p_code = (pelada_code or "").upper()
+        p_code = pelada_code.upper().strip()
         async with aiosqlite.connect(self.db_path) as db:
+            # Substitui apenas a partida desta pelada (chave composta pelada_code + id)
             await db.execute("""
                 INSERT OR REPLACE INTO matches (
                     id, round_number, home_team_id, home_team_name, away_team_id, away_team_name,
@@ -235,53 +270,47 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             ))
             await db.commit()
 
-    async def get_match(self, match_id: str, pelada_code: Optional[str] = None) -> Optional[Match]:
+    async def get_match(self, match_id: str, pelada_code: str) -> Optional[Match]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            if pelada_code:
-                cursor = await db.execute("SELECT * FROM matches WHERE id = ? AND pelada_code = ?", (match_id, pelada_code.upper()))
-            else:
-                cursor = await db.execute("SELECT * FROM matches WHERE id = ?", (match_id,))
+            cursor = await db.execute(
+                "SELECT * FROM matches WHERE id = ? AND pelada_code = ?", (match_id, pelada_code.upper().strip())
+            )
             row = await cursor.fetchone()
             if not row:
                 return None
             return self._row_to_match(row)
 
-    async def list_matches(self, limit: int = 100, pelada_code: Optional[str] = None) -> List[Match]:
+    async def list_matches(self, pelada_code: str, limit: int = 100) -> List[Match]:
+        # Busca as partidas de todas as peladas na corrente (pool)
+        codes = await self.get_pelada_chain_codes(pelada_code)
+        if not codes:
+            return []
+        placeholders = ",".join("?" for _ in codes)
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            if pelada_code:
-                # Busca as partidas de todas as peladas na corrente (pool)
-                codes = await self.get_pelada_chain_codes(pelada_code)
-                placeholders = ",".join("?" for _ in codes)
-                cursor = await db.execute(
-                    f"SELECT * FROM matches WHERE pelada_code IN ({placeholders}) ORDER BY rowid DESC LIMIT ?",
-                    (*codes, limit)
-                )
-            else:
-                cursor = await db.execute("SELECT * FROM matches ORDER BY rowid DESC LIMIT ?", (limit,))
+            cursor = await db.execute(
+                f"SELECT * FROM matches WHERE pelada_code IN ({placeholders}) ORDER BY rowid DESC LIMIT ?",
+                (*codes, limit)
+            )
             rows = await cursor.fetchall()
             return [self._row_to_match(r) for r in rows]
 
-    async def delete_all_matches(self, pelada_code: Optional[str] = None) -> None:
+    async def delete_all_matches(self, pelada_code: str) -> None:
         async with aiosqlite.connect(self.db_path) as db:
-            if pelada_code:
-                await db.execute("DELETE FROM matches WHERE pelada_code = ?", (pelada_code.upper(),))
-            else:
-                await db.execute("DELETE FROM matches")
+            await db.execute("DELETE FROM matches WHERE pelada_code = ?", (pelada_code.upper().strip(),))
             await db.commit()
 
-    async def delete_match(self, match_id: str, pelada_code: Optional[str] = None) -> bool:
+    async def delete_match(self, match_id: str, pelada_code: str) -> bool:
         async with aiosqlite.connect(self.db_path) as db:
-            if pelada_code:
-                cursor = await db.execute("DELETE FROM matches WHERE id = ? AND pelada_code = ?", (match_id, pelada_code.upper()))
-            else:
-                cursor = await db.execute("DELETE FROM matches WHERE id = ?", (match_id,))
+            cursor = await db.execute(
+                "DELETE FROM matches WHERE id = ? AND pelada_code = ?", (match_id, pelada_code.upper().strip())
+            )
             await db.commit()
             return cursor.rowcount > 0
 
-    async def save_config(self, config: SessionConfig, pelada_code: Optional[str] = None) -> None:
-        key = f"session_config_{pelada_code.upper()}" if pelada_code else "session_config"
+    async def save_config(self, config: SessionConfig, pelada_code: str) -> None:
+        key = f"session_config_{pelada_code.upper().strip()}"
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO configs (key, val) VALUES (?, ?)",
@@ -289,14 +318,11 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             )
             await db.commit()
 
-    async def get_config(self, pelada_code: Optional[str] = None) -> SessionConfig:
-        key = f"session_config_{pelada_code.upper()}" if pelada_code else "session_config"
+    async def get_config(self, pelada_code: str) -> SessionConfig:
+        key = f"session_config_{pelada_code.upper().strip()}"
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("SELECT val FROM configs WHERE key = ?", (key,))
             row = await cursor.fetchone()
-            if not row and pelada_code:
-                cursor = await db.execute("SELECT val FROM configs WHERE key = 'session_config'")
-                row = await cursor.fetchone()
             if row and row[0]:
                 data = json.loads(row[0])
                 valid_fields = SessionConfig.__dataclass_fields__.keys()
@@ -516,6 +542,11 @@ class SQLiteMatchRepository(MatchRepositoryPort):
     async def delete_admin_token(self, token: str) -> None:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("DELETE FROM admin_tokens WHERE token = ?", (token,))
+            await db.commit()
+
+    async def delete_admin_tokens_for_pelada(self, pelada_code: str) -> None:
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM admin_tokens WHERE pelada_code = ?", (pelada_code.upper().strip(),))
             await db.commit()
 
     async def load_all_admin_tokens(self) -> Dict[str, Tuple[str, float]]:

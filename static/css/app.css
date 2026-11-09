@@ -1,0 +1,220 @@
+/* Estilos próprios da interface (movidos do index.html para a CSP sem 'unsafe-inline') */
+    /* Ocultar barra de rolagem visualmente em todo o documento e containers internos, mantendo o scroll funcional */
+    html, body {
+      scrollbar-width: none; /* Firefox */
+      -ms-overflow-style: none; /* IE e Edge legado */
+    }
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    /* Ocultar barra de rolagem em todos os elementos com scroll mantendo a rolagem */
+    .overflow-y-auto,
+    .overflow-x-auto,
+    .overflow-auto,
+    [class*="overflow-y-"],
+    [class*="overflow-x-"] {
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+    }
+    .overflow-y-auto::-webkit-scrollbar,
+    .overflow-x-auto::-webkit-scrollbar,
+    .overflow-auto::-webkit-scrollbar,
+    [class*="overflow-y-"]::-webkit-scrollbar,
+    [class*="overflow-x-"]::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+
+    /* Custom Scrollbars fallback */
+    ::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+    .glow-neon {
+      box-shadow: 0 0 25px rgba(0, 245, 155, 0.25);
+    }
+    .badge-gk {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    }
+
+    /* Container de abas com deslocamento contínuo (estilo carrossel/slide com respiro elegante) */
+    :root {
+      --tab-gap: 48px;
+      --active-tab-index: 0;
+    }
+
+    #tab-viewport {
+      width: 100%;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    #tabs-slider {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--tab-gap);
+      width: calc(400% + (3 * var(--tab-gap)));
+      transform: translateX(calc(-1 * var(--active-tab-index) * ((100% - 3 * var(--tab-gap)) / 4 + var(--tab-gap))));
+      transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+      will-change: transform;
+    }
+
+    .tab-slide-pane {
+      /* Cada painel ocupa exatamente a largura total visível do container viewport */
+      width: calc((100% - (3 * var(--tab-gap))) / 4);
+      flex-shrink: 0;
+      min-width: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    /* Painéis inativos em repouso não acumulam altura fantasma nem focam */
+    .tab-slide-pane.tab-inactive {
+      height: 0;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+
+    /* Menu inferior mobile 100% fixo com isolamento de camada e área segura */
+    #mobile-bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 50;
+      transform: translateZ(0);
+      -webkit-transform: translateZ(0);
+      padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #tabs-slider {
+        transition: none !important;
+      }
+    }
+
+    /* Estilo de Confronto / Combate de Aço Brutal para VS */
+    .vs-silver-metal {
+      display: inline-block;
+      line-height: 1.15;
+      padding: 2px 4px;
+      overflow: visible;
+      background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 32%, #64748b 68%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 10px rgba(148, 163, 184, 0.4));
+      transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), filter 0.2s ease;
+    }
+
+    /* Estilo Gravado / Cravado de Partida Finalizada com Frisos Metálicos */
+    .match-finished-carved {
+      background: linear-gradient(180deg, #475569 0%, #94a3b8 45%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 -1.5px 1px #000000) drop-shadow(0 1px 1px rgba(255, 255, 255, 0.4));
+      letter-spacing: 0.25em;
+    }
+
+    .match-finished-groove-left {
+      height: 1.5px;
+      background: linear-gradient(to right, transparent, #64748b 80%, #94a3b8);
+      box-shadow: 0 1px 1px rgba(255, 255, 255, 0.25);
+    }
+
+    .match-finished-groove-right {
+      height: 1.5px;
+      background: linear-gradient(to left, transparent, #64748b 80%, #94a3b8);
+      box-shadow: 0 1px 1px rgba(255, 255, 255, 0.25);
+    }
+
+    .vs-btn-active:hover .vs-silver-metal {
+      transform: scale(1.1);
+      filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.6)) drop-shadow(0 2px 6px rgba(0,0,0,0.9));
+    }
+
+    .vs-btn-active:active .vs-silver-metal {
+      transform: scale(0.92);
+    }
+
+    @keyframes gentleFloatBounceDown {
+      0%, 100% {
+        transform: translateY(0);
+        opacity: 0.7;
+      }
+      50% {
+        transform: translateY(6px);
+        opacity: 1;
+      }
+    }
+
+    @keyframes gentleFloatBounceUp {
+      0%, 100% {
+        transform: translateY(0);
+        opacity: 0.7;
+      }
+      50% {
+        transform: translateY(-6px);
+        opacity: 1;
+      }
+    }
+
+    .scroll-indicator-bounce-down {
+      animation: gentleFloatBounceDown 2.4s ease-in-out infinite;
+    }
+
+    .scroll-indicator-bounce-up {
+      animation: gentleFloatBounceUp 2.4s ease-in-out infinite;
+    }
+
+    @keyframes vsPulseBorder {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.04); opacity: 1; }
+    }
+
+    .timer-running-pulse {
+      animation: vsPulseBorder 2s ease-in-out infinite;
+    }
+
+    /* Banner da pelada: degradê neon da esquerda para a direita com brilho pulsante */
+    .pelada-banner {
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 100% 50%, rgba(0, 245, 155, 0.38), transparent 45%),
+        linear-gradient(90deg, rgba(0, 245, 155, 0.18), rgba(22, 32, 50, 0.6) 60%, #162032);
+      animation: peladaBannerPulse 3s ease-in-out infinite;
+    }
+    .pelada-banner::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #00f59b, transparent);
+      opacity: 0.8;
+      pointer-events: none;
+    }
+    .pelada-banner > * {
+      position: relative;
+      z-index: 1;
+    }
+    /* Selo de partidas pendentes sobre a aba ativa (fundo verde): mantém o número legível */
+    .nav-tab.active #badge-pending-matches {
+      background-color: rgba(0, 0, 0, 0.22);
+      color: #000;
+    }
+    @keyframes peladaBannerPulse {
+      0%, 100% { box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.3), 0 0 18px -6px rgba(0, 245, 155, 0.25); }
+      50% { box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.55), 0 0 34px -4px rgba(0, 245, 155, 0.45); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pelada-banner {
+        animation: none;
+        box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.3);
+      }
+    }
