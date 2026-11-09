@@ -37,7 +37,7 @@ source .venv/bin/activate
 
 # 3. Instale e jogue!
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 4796
 ```
 
-> Abra no celular ou navegador em `http://localhost:8000`, clique em **Instalar App** e viva o futebol como nunca antes. 🏆
+> Abra no celular ou navegador em `http://localhost:4796`, clique em **Instalar App** e viva o futebol como nunca antes. 🏆

@@ -34,3 +34,8 @@ ENV/
 *.log
 .DS_Store
 Thumbs.db
+
+# Custom & AI Context
+icon-previews/
+AGENTS.md
+agents.md

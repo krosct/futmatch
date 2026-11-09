@@ -16,5 +16,6 @@ Aplicação web moderna, ágil e intuitiva para organização de partidas de fut
   - `static/`: CSS/JS e assets visuais.
   - `templates/`: Páginas HTML da aplicação.
 - **Comandos Principais:**
-  - Iniciar backend: `uvicorn app.main:app --reload --port 8000`
+  - Iniciar backend (usuário/produção local): `uvicorn app.main:app --reload --port 4796`
+  - Porta de testes do modelo/assistente: Servidores de teste acionados pelo modelo inteligente devem rodar estritamente na **porta 4797** para evitar conflitos com o servidor do usuário na porta 4796.
   - Dependências: `pip install fastapi uvicorn aiosqlite pydantic`
