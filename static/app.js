@@ -148,6 +148,7 @@ function setLandingVisibility(showLanding) {
       appHeader.classList.add('hidden');
     } else {
       appHeader.classList.remove('hidden');
+      atualizarIndicadorNav();
     }
   }
 
@@ -1043,8 +1044,10 @@ function toggleSoundMute() {
 // ==============================
 document.addEventListener("DOMContentLoaded", async () => {
   updateTabPanesVisibility(0);
+  switchTab('matchmaker');
   atualizarBotaoSomUI();
   await inicializarPelada();
+  atualizarIndicadorNav();
   refreshIcons();
 
   const playersList = document.getElementById("players-list-container");
@@ -1191,6 +1194,17 @@ function atualizarIndicadorNav() {
   const btn = document.querySelector('nav .nav-tab.active');
   if (!btn || btn.offsetWidth === 0) {
     pill.style.opacity = '0';
+    // Se o elemento acabou de ficar visível mas ainda não teve layout calculado pelo navegador
+    if (btn && btn.offsetParent !== null) {
+      requestAnimationFrame(() => {
+        if (btn.offsetWidth > 0) {
+          pill.style.width = `${btn.offsetWidth}px`;
+          pill.style.height = `${btn.offsetHeight}px`;
+          pill.style.transform = `translate(${btn.offsetLeft}px, ${btn.offsetTop}px)`;
+          pill.style.opacity = '1';
+        }
+      });
+    }
     return;
   }
   pill.style.width = `${btn.offsetWidth}px`;

@@ -21,12 +21,12 @@
   <!-- Fonte Outfit hospedada localmente (sem chamadas ao Google Fonts) -->
   <link rel="stylesheet" href="/static/vendor/fonts.css">
   <!-- Bibliotecas servidas pelo próprio app (sem CDN) -->
-  <script src="/static/vendor/lucide.min.js"></script>
-  <script src="/static/vendor/chart.umd.min.js"></script>
-  <script src="/static/vendor/confetti.browser.min.js"></script>
+  <script data-cfasync="false" src="/static/vendor/lucide.min.js"></script>
+  <script data-cfasync="false" src="/static/vendor/chart.umd.min.js"></script>
+  <script data-cfasync="false" src="/static/vendor/confetti.browser.min.js"></script>
   <!-- Bibliotecas para Geração de PDF de Alta Fidelidade (html2canvas 1.4.1 + jsPDF 2.5.1) -->
-  <script src="/static/html2canvas.min.js"></script>
-  <script src="/static/jspdf.umd.min.js"></script>
+  <script data-cfasync="false" src="/static/html2canvas.min.js"></script>
+  <script data-cfasync="false" src="/static/jspdf.umd.min.js"></script>
 
 
 
@@ -163,10 +163,10 @@
       </div>
 
       <!-- Main Navigation Tabs -->
-      <nav class="hidden lg:flex items-center space-x-1 bg-pitch/80 p-1 rounded-xl border border-borderLight flex-shrink-0 relative">
+      <nav class="hidden lg:flex items-center gap-1 bg-pitch/80 p-1 rounded-xl border border-borderLight flex-shrink-0 relative">
         <!-- Indicador deslizante da aba selecionada (posicionado por atualizarIndicadorNav) -->
         <span id="nav-tab-pill" aria-hidden="true" class="absolute left-0 top-0 rounded-lg bg-neon-accent shadow-sm pointer-events-none transition-all duration-300 ease-out opacity-0"></span>
-        <button data-h-click="switchTab" data-a='["matchmaker"]' id="tab-btn-matchmaker" class="nav-tab active relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-black">
+        <button data-h-click="switchTab" data-a='["matchmaker"]' id="tab-btn-matchmaker" class="nav-tab active relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
           <i data-lucide="users" class="w-3.5 h-3.5 pointer-events-none"></i>
           <span class="pointer-events-none">Jogadores & Times</span>
         </button>
@@ -1048,9 +1048,9 @@
   </div>
 
   <!-- Scripts da Aplicação -->
-  <script src="/static/audit.js?v=1"></script>
-  <script src="/static/audio.js?v=4"></script>
-  <script src="/static/handlers.js?v=4"></script>
-  <script src="/static/app.js?v=15"></script>
+  <script data-cfasync="false" src="/static/audit.js?v=2"></script>
+  <script data-cfasync="false" src="/static/audio.js?v=5"></script>
+  <script data-cfasync="false" src="/static/handlers.js?v=5"></script>
+  <script data-cfasync="false" src="/static/app.js?v=16"></script>
 </body>
 </html>
