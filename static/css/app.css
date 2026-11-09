@@ -218,3 +218,8 @@
         box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.3);
       }
     }
+
+    /* Botão de escolher arquivo: o input real fica oculto, mas continua focável pelo teclado */
+    input:focus-visible + .file-trigger {
+      box-shadow: 0 0 0 2px #00f59b;
+    }

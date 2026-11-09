@@ -845,6 +845,16 @@ async function exportarPelada() {
   }
 }
 
+function mostrarArquivoImportacao() {
+  const input = document.getElementById('input-import-file');
+  const nome = document.getElementById('import-file-name');
+  if (!nome) return;
+  const arquivo = input && input.files ? input.files[0] : null;
+  nome.textContent = arquivo ? arquivo.name : 'Nenhum arquivo escolhido';
+  nome.classList.toggle('text-white', !!arquivo);
+  nome.classList.toggle('text-slate-400', !arquivo);
+}
+
 async function importarPelada(event) {
   event.preventDefault();
   if (window.SoundManager) window.SoundManager.play('efeitos');

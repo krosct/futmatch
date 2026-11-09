@@ -42,6 +42,7 @@
     'inicioRapido',
     'limparHistorico',
     'limparTodasRodadas',
+    'mostrarArquivoImportacao',
     'mudarPaginaHistorico',
     'onCardDragLeave',
     'onCardDragOver',
