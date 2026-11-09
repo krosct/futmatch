@@ -29,6 +29,7 @@ futMatch/
 ├── static/            # Frontend SPA (HTML5, JS, CSS Tailwind, sons e ícones)
 │   ├── alarms/        # Efeitos de alarme e término de partida
 │   ├── icons/         # Favicons e ícones PWA
+│   ├── lib/           # Bibliotecas e assets locais (Lucide, Chart.js, Confetti, fontes)
 │   ├── music/         # Músicas e vinhetas de fundo
 │   ├── sounds/        # Efeitos sonoros para ações
 │   ├── app.js         # Lógica principal de UI, cronômetro e pelada
@@ -41,7 +42,10 @@ futMatch/
 └── AGENTS.md          # Diretrizes, arquitetura e stack do projeto
 ```
 
-## 5. Comandos e Informações Essenciais
+## 5. Diretrizes de Assets e WAF
+- **Pasta de Bibliotecas (`static/lib/`)**: Nunca renomeie ou mova bibliotecas e assets client-side para `static/vendor/`. O WAF do Cloudflare no domínio bloqueia qualquer URL contendo o termo `vendor` (para proteção genérica contra explorações de PHP/Composer), o que causa erro HTTP 403 Forbidden nos scripts e ícones em produção. Todos os pacotes e fontes locais devem permanecer sob `static/lib/`.
+
+## 6. Comandos e Informações Essenciais
 - **Comandos Principais:**
   - Iniciar backend (usuário/produção local): `uvicorn app.main:app --reload --port 4796`
   - Porta de testes do modelo/assistente: Servidores de teste acionados pelo modelo inteligente devem rodar estritamente na **porta 4797** para evitar conflitos com o servidor do usuário na porta 4796.
