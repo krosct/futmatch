@@ -32,14 +32,17 @@
     'entrarNaPelada',
     'escolherCorTime',
     'executarAssumirAdmin',
+    'exportarPelada',
     'exportarRelatorioPDF',
     'fecharModalNovaPartida',
     'filterChartPlayerSearch',
     'gerarTabelaConfrontos',
+    'importarPelada',
     'importBulkPlayers',
     'inicioRapido',
     'limparHistorico',
     'limparTodasRodadas',
+    'mostrarArquivoImportacao',
     'mudarPaginaHistorico',
     'onCardDragLeave',
     'onCardDragOver',
@@ -128,13 +131,31 @@
 
   EVENTOS.forEach((tipo) => document.addEventListener(tipo, despachar));
 
-  // Ícones Lucide: se a biblioteca não carregou, a interface continua funcionando sem ícones
+  // Ícones Lucide: renderização resiliente (aguarda carregamento assíncrono ou Rocket Loader se necessário)
   window.refreshIcons = function () {
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
-      window.lucide.createIcons();
+      try {
+        window.lucide.createIcons();
+      } catch (err) {
+        console.warn('Erro ao atualizar ícones Lucide:', err);
+      }
     }
   };
   window.refreshIcons();
+
+  // Se o script do Lucide ainda estiver carregando (ex.: rede lenta, proxy ou cache), agenda retentativas seguras
+  if (!window.lucide || typeof window.lucide.createIcons !== 'function') {
+    let tentativas = 0;
+    const intervalId = setInterval(() => {
+      tentativas++;
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        clearInterval(intervalId);
+        window.refreshIcons();
+      } else if (tentativas >= 50) {
+        clearInterval(intervalId);
+      }
+    }, 100);
+  }
 
   // Registro do Service Worker para PWA
   if ('serviceWorker' in navigator) {

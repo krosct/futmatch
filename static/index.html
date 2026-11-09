@@ -21,16 +21,16 @@
   <!-- Fonte Outfit hospedada localmente (sem chamadas ao Google Fonts) -->
   <link rel="stylesheet" href="/static/vendor/fonts.css">
   <!-- Bibliotecas servidas pelo próprio app (sem CDN) -->
-  <script src="/static/vendor/lucide.min.js"></script>
-  <script src="/static/vendor/chart.umd.min.js"></script>
-  <script src="/static/vendor/confetti.browser.min.js"></script>
+  <script data-cfasync="false" src="/static/vendor/lucide.min.js"></script>
+  <script data-cfasync="false" src="/static/vendor/chart.umd.min.js"></script>
+  <script data-cfasync="false" src="/static/vendor/confetti.browser.min.js"></script>
   <!-- Bibliotecas para Geração de PDF de Alta Fidelidade (html2canvas 1.4.1 + jsPDF 2.5.1) -->
-  <script src="/static/html2canvas.min.js"></script>
-  <script src="/static/jspdf.umd.min.js"></script>
+  <script data-cfasync="false" src="/static/html2canvas.min.js"></script>
+  <script data-cfasync="false" src="/static/jspdf.umd.min.js"></script>
 
 
 
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v=2">
   <link rel="stylesheet" href="/static/css/ds.css">
 </head>
 
@@ -163,10 +163,10 @@
       </div>
 
       <!-- Main Navigation Tabs -->
-      <nav class="hidden lg:flex items-center space-x-1 bg-pitch/80 p-1 rounded-xl border border-borderLight flex-shrink-0 relative">
+      <nav class="hidden lg:flex items-center gap-1 bg-pitch/80 p-1 rounded-xl border border-borderLight flex-shrink-0 relative">
         <!-- Indicador deslizante da aba selecionada (posicionado por atualizarIndicadorNav) -->
         <span id="nav-tab-pill" aria-hidden="true" class="absolute left-0 top-0 rounded-lg bg-neon-accent shadow-sm pointer-events-none transition-all duration-300 ease-out opacity-0"></span>
-        <button data-h-click="switchTab" data-a='["matchmaker"]' id="tab-btn-matchmaker" class="nav-tab active relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-black">
+        <button data-h-click="switchTab" data-a='["matchmaker"]' id="tab-btn-matchmaker" class="nav-tab active relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
           <i data-lucide="users" class="w-3.5 h-3.5 pointer-events-none"></i>
           <span class="pointer-events-none">Jogadores & Times</span>
         </button>
@@ -818,6 +818,41 @@
           </div>
         </div>
 
+        <!-- Backup da Pelada: exportar e importar em JSON -->
+        <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
+          <div class="border-b border-borderLight pb-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+              <i data-lucide="archive" class="w-5 h-5 text-neon-accent"></i>
+              <span>Backup da Pelada</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Exporte em JSON ou importe um arquivo para substituir esta pelada.</p>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-card/50 border border-borderLight flex items-center justify-between gap-4">
+            <p class="text-xs font-semibold text-slate-300">Exportar pelada</p>
+            <button data-h-click="exportarPelada" id="btn-export-pelada" class="px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-neon-accent rounded-xl transition font-medium flex items-center gap-1.5">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Exportar JSON</span>
+            </button>
+          </div>
+
+          <form data-h-submit="importarPelada" data-a='["@event"]' class="p-4 rounded-2xl bg-card border border-borderLight space-y-3">
+            <p class="text-xs font-semibold text-slate-300">Importar pelada</p>
+            <div class="flex items-center gap-3 min-w-0">
+              <input type="file" id="input-import-file" accept="application/json,.json" data-h-change="mostrarArquivoImportacao" class="sr-only">
+              <label for="input-import-file" class="file-trigger shrink-0 cursor-pointer px-3 py-1.5 bg-surface hover:bg-cardLight border border-borderLight text-xs text-neon-accent rounded-xl transition font-medium flex items-center gap-1.5">
+                <i data-lucide="file-json" class="w-3.5 h-3.5"></i>
+                <span>Escolher arquivo</span>
+              </label>
+              <span id="import-file-name" class="text-xs text-slate-400 truncate min-w-0">Nenhum arquivo escolhido</span>
+            </div>
+            <button type="submit" id="btn-import-pelada" class="w-full sm:w-auto px-5 py-2.5 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+              <i data-lucide="upload" class="w-4 h-4"></i>
+              <span>Importar e substituir</span>
+            </button>
+          </form>
+        </div>
+
         <!-- Parâmetros da Pelada -->
         <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
           <div class="border-b border-borderLight pb-4 flex items-center justify-between flex-wrap gap-2">
@@ -1013,9 +1048,9 @@
   </div>
 
   <!-- Scripts da Aplicação -->
-  <script src="/static/audit.js?v=1"></script>
-  <script src="/static/audio.js?v=4"></script>
-  <script src="/static/handlers.js?v=4"></script>
-  <script src="/static/app.js?v=15"></script>
+  <script data-cfasync="false" src="/static/audit.js?v=2"></script>
+  <script data-cfasync="false" src="/static/audio.js?v=5"></script>
+  <script data-cfasync="false" src="/static/handlers.js?v=5"></script>
+  <script data-cfasync="false" src="/static/app.js?v=16"></script>
 </body>
 </html>

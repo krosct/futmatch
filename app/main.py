@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Response, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 import asyncio
@@ -15,7 +15,8 @@ import time
 from app.domain.models import Player, Team, Match, SessionConfig, PeladaSession
 from app.domain.audit import AuditEvent, normalize_pelada_code, sanitize_audit_event
 from app.domain.matchmaker import MatchmakerService
-from app.domain.pool import earliest_pelada_date
+from app.domain.pool import PELADA_CREATED_AT_FORMAT, earliest_pelada_date
+from app.domain.pelada_backup import BACKUP_FORMAT, BACKUP_VERSION, build_backup_document
 from app.domain.security import (
     hash_password,
     verify_password,
@@ -476,6 +477,76 @@ class BatchAuditRequest(BaseModel):
     events: List[Dict[str, Any]] = Field(..., max_length=100)
 
 
+# ---- Importação de pelada (arquivo JSON gerado pela exportação) ----
+class MatchImportDTO(MatchSaveRequest):
+    winner_team_id: Optional[str] = Field(None, max_length=64, pattern=SAFE_ID_PATTERN)
+    is_draw: bool = False
+    finished: bool = True
+    played_at: Optional[str] = Field(None, max_length=32)
+
+
+class PeladaBackupInfoDTO(BaseModel):
+    code: str = Field(..., max_length=10)
+    name: str = Field(..., min_length=3, max_length=60)
+    created_at: str = Field(..., max_length=32)
+    description: str = Field("", max_length=140)
+    config: ConfigDTO = Field(default_factory=ConfigDTO)
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        clean = _norm_code(v)
+        if not re.fullmatch(r"[A-Z0-9]{1,10}", clean):
+            raise ValueError("Código da pelada inválido no arquivo.")
+        return clean
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str) -> str:
+        trimmed = v.strip()
+        if len(trimmed) < 3:
+            raise ValueError("O nome da pelada deve conter no mínimo 3 caracteres.")
+        return trimmed
+
+    @field_validator("created_at")
+    @classmethod
+    def validate_created_at(cls, v: str) -> str:
+        try:
+            datetime.strptime(v, PELADA_CREATED_AT_FORMAT)
+        except ValueError:
+            raise ValueError("Data de criação inválida no arquivo (esperado dd/mm/aaaa HH:MM:SS).")
+        return v
+
+
+class PeladaBackupPoolDTO(BaseModel):
+    model_config = ConfigDict(extra="ignore")  # a lista 'chain' é só informativa na importação
+    parent_code: Optional[str] = Field(None, max_length=10)
+
+
+class PeladaBackupDTO(BaseModel):
+    format: str = Field(..., pattern=f"^{BACKUP_FORMAT}$")
+    version: int = Field(..., ge=1, le=BACKUP_VERSION)
+    exported_at: Optional[str] = Field(None, max_length=32)
+    pelada: PeladaBackupInfoDTO
+    pool: PeladaBackupPoolDTO = Field(default_factory=PeladaBackupPoolDTO)
+    players: List[PlayerDTO] = Field(default_factory=list, max_length=300)
+    teams: List[TeamDTO] = Field(default_factory=list, max_length=50)
+    fixtures: List[FixtureDTO] = Field(default_factory=list, max_length=500)
+    matches: List[MatchImportDTO] = Field(default_factory=list, max_length=2000)
+
+    @model_validator(mode="after")
+    def check_unique_keys(self):
+        names = [p.name.strip().lower() for p in self.players]
+        if len(names) != len(set(names)):
+            raise ValueError("O arquivo contém jogadores com o mesmo nome.")
+        match_ids = [m.id for m in self.matches]
+        if len(match_ids) != len(set(match_ids)):
+            raise ValueError("O arquivo contém partidas com o mesmo identificador.")
+        return self
+
+
+
+
 # ==========================================
 # ROTAS DE PELADAS
 # ==========================================
@@ -749,6 +820,105 @@ async def sync_pelada_state(code: str, req: SyncPeladaStateRequest, request: Req
         data={"players": players, "teams": teams, "fixtures": fixtures, "config": (await repo.get_config(clean_code)).__dict__}
     )
     return {"status": "ok"}
+
+
+@app.get("/api/peladas/{code}/export")
+async def export_pelada(code: str, request: Request):
+    """Exporta a pelada completa em JSON (dados, configurações, pool e histórico). Nunca inclui a senha mestra."""
+    _enforce_rate_limit(f"pelada-read:{get_client_ip(request)}", PELADA_READ_LIMIT, "Muitas consultas. Aguarde {} segundo(s).")
+    pelada = await _require_pelada(code)
+
+    pool_chain = []
+    for chain_code in (await repo.get_pelada_chain_codes(pelada.code))[1:]:
+        ancestor = await repo.get_pelada(chain_code)
+        if ancestor:
+            pool_chain.append({
+                "code": ancestor.code,
+                "name": ancestor.name,
+                "created_at": ancestor.created_at,
+                "description": ancestor.description,
+            })
+
+    config = await repo.get_config(pelada.code)
+    matches = await repo.list_pelada_matches(pelada.code)
+    document = build_backup_document(
+        code=pelada.code,
+        name=pelada.name,
+        created_at=pelada.created_at,
+        description=pelada.description,
+        config=config.__dict__,
+        parent_code=pelada.parent_code,
+        pool_chain=pool_chain,
+        players=pelada.players,
+        teams=pelada.teams,
+        fixtures=pelada.fixtures,
+        matches=[repo._match_to_dict(m) for m in matches],
+        exported_at=datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S"),
+    )
+    return JSONResponse(
+        document,
+        headers={
+            "Content-Disposition": f'attachment; filename="futmatch-{pelada.code}.json"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.post("/api/peladas/{code}/import")
+async def import_pelada(code: str, backup: PeladaBackupDTO, request: Request):
+    """Sobrescreve esta pelada com o conteúdo do arquivo exportado. Exige administração.
+
+    Substitui nome, descrição, data de criação, configurações, jogadores, times, formações, vínculo de pool
+    e todo o histórico. A senha mestra não muda. O vínculo de pool do arquivo é restaurado; se a pelada
+    anterior não existir neste servidor, o vínculo é mantido e um aviso é devolvido.
+    """
+    clean_code = _norm_code(code)
+    await require_admin_permission(request, clean_code)
+    _enforce_rate_limit(f"import:{clean_code}:{get_client_ip(request)}", (5, 60), "Muitas importações. Aguarde {} segundo(s).")
+    warnings: List[str] = []
+
+    file_code = backup.pelada.code
+    if file_code != clean_code:
+        warnings.append(f"O arquivo é da pelada #{file_code}. Os dados foram gravados na pelada #{clean_code}.")
+
+    parent_code = _norm_code(backup.pool.parent_code) if backup.pool.parent_code else None
+    if parent_code == clean_code:
+        parent_code = None  # uma pelada não pode ser vinculada a ela mesma
+    elif parent_code and not await repo.get_pelada(parent_code):
+        warnings.append(f"A pelada anterior #{parent_code} não existe neste servidor. O vínculo foi mantido, mas a corrente fica incompleta.")
+
+    config_fields = SessionConfig.__dataclass_fields__.keys()
+    config = SessionConfig(**{k: v for k, v in backup.pelada.config.model_dump().items() if k in config_fields and v is not None})
+    match_fields = Match.__dataclass_fields__.keys()
+    matches = [Match(**{k: v for k, v in m.model_dump().items() if k in match_fields}) for m in backup.matches]
+
+    # password_hash fica vazio aqui de propósito: o UPDATE do repositório não grava a senha
+    pelada = PeladaSession(
+        code=clean_code,
+        password_hash="",
+        created_at=backup.pelada.created_at,
+        name=backup.pelada.name,
+        players=[p.model_dump() for p in backup.players],
+        teams=[t.model_dump() for t in backup.teams],
+        fixtures=[f.model_dump() for f in backup.fixtures],
+        config=config.__dict__,
+        parent_code=parent_code,
+        description=backup.pelada.description,
+    )
+    await repo.overwrite_pelada(pelada, config, matches)
+
+    await broadcaster.broadcast(
+        pelada_code=clean_code,
+        event_type="state_updated",
+        data={"players": pelada.players, "teams": pelada.teams, "fixtures": pelada.fixtures, "config": config.__dict__}
+    )
+    return {
+        "status": "ok",
+        "code": clean_code,
+        "name": pelada.name,
+        "matches": len(matches),
+        "warnings": warnings,
+    }
 
 
 # ==========================================
