@@ -62,6 +62,7 @@ Use esta skill para responder com contexto real do projeto, sem refazer a análi
 - **B6** Init do app abortava se o Lucide não carregasse. Corrigido (`refreshIcons`).
 - **B7** Dois `on*` dentro de template literal escaparam da conversão. Corrigido e coberto por regex de teste.
 - **B8** Gol de jogador não escalado era aceito sem validação de placar. Corrigido (toast e bloqueio).
+- **B10** Teste dependia de `futmatch.db` local e passava só na máquina do dev; o CI expôs. Regra: testes devem usar o fixture de banco temporário e rodar com `DATA_DIR` vazio.
 - **B9** Mismatch aparente gol × placar no PDF: não era bug. O snapshot `home_players` é copiado na geração do confronto; o arrasto posterior não altera o snapshot. Comportamento esperado, mas vale documentar para o usuário.
 
 ## 5. Perigos e limites residuais (honestos)
@@ -88,5 +89,6 @@ Use esta skill para responder com contexto real do projeto, sem refazer a análi
 - Relatórios PDF gerados no navegador com html2canvas (patch documentado).
 
 ## 8. Pendências abertas no momento
-- Validação remota do CI (job `e2e` e `test` no GitHub): exige push de uma branch e PR em draft para `krosct/futmatch`. Só fazer com autorização explícita do dono. Nunca push direto em `main` sem aval, porque dispara o deploy em produção.
-- Commits: `22bf7b3` (segurança e front-end) e `ed9fac1` (gol sem escalação e testes), ambos em `main`, sem push.
+- Validação remota do CI: **concluída** no PR #1 (draft, branch `ci/validacao-remota`): run 42553178464, jobs `Testes e Verificação` e `E2E no navegador (Chrome)` com sucesso; `deploy` pulado (só roda em push para `main`).
+- O PR continua em draft e não foi mesclado. A `main` não recebeu push.
+- Commits: `22bf7b3`, `ed9fac1` e `cd096d6` em `main`; `66e8a8a` na branch do PR.
