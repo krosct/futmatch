@@ -1,30 +1,21 @@
 import random
 from typing import List, Tuple, Optional, Dict, Any
 from app.domain.models import Player, Team, Match
-
-COLOR_PALETTE = [
-    {"name": "Colete Verde", "color": "#84cc16", "badge": "🟢"},
-    {"name": "Colete Laranja", "color": "#f97316", "badge": "🟠"},
-    {"name": "Colete Azul", "color": "#3b82f6", "badge": "🔵"},
-    {"name": "Colete Vermelho", "color": "#ef4444", "badge": "🔴"},
-    {"name": "Colete Amarelo", "color": "#eab308", "badge": "🟡"},
-    {"name": "Colete Preto", "color": "#64748b", "badge": "⚫"},
-    {"name": "Colete Roxo", "color": "#a855f7", "badge": "🟣"},
-    {"name": "Colete Branco", "color": "#e2e8f0", "badge": "⚪"},
-]
+from app.domain.team_colors import TEAM_COLORS
 
 class MatchmakerService:
     @staticmethod
     def calculate_effective_level(
         base_level: int,
         stats: Optional[Dict[str, Any]] = None,
-        min_matches_threshold: int = 3
+        min_matches_threshold: int = 1,
+        stars_pct: int = 40,
     ) -> float:
         """
         Calcula o nível efetivo ponderado:
-        - 0.40 para estrelas manuais base (1 a 5)
-        - 0.60 para performance real em jogos anteriores (vitórias 60% e média de gols 40%)
-        Se o jogador tiver menos de `min_matches_threshold` partidas, mantém 100% das estrelas base.
+        - `stars_pct`% para estrelas manuais base (1 a 5; padrão 40)
+        - o restante para performance real em jogos anteriores (vitórias 60% e média de gols 40%)
+        Se o jogador tiver menos de `min_matches_threshold` partidas (padrão 1), mantém 100% das estrelas base.
         """
         base = max(1.0, min(5.0, float(base_level)))
         if not stats or stats.get("matches", 0) < min_matches_threshold:
@@ -46,8 +37,9 @@ class MatchmakerService:
         # Performance score (escala 0 a 5.0)
         performance_score = (win_score * 0.60) + (goal_score * 0.40)
 
-        # Ponderação 0.4 estrelas base + 0.6 performance
-        effective = (base * 0.40) + (performance_score * 0.60)
+        # Ponderação: `stars_pct`% estrelas base + restante performance
+        stars_weight = max(0.0, min(100.0, float(stars_pct))) / 100.0
+        effective = (base * stars_weight) + (performance_score * (1.0 - stars_weight))
         return round(max(1.0, min(5.0, effective)), 2)
 
     @staticmethod
@@ -60,10 +52,10 @@ class MatchmakerService:
         teams: List[Team] = []
 
         for i in range(num_teams):
-            palette = COLOR_PALETTE[i % len(COLOR_PALETTE)]
+            palette = TEAM_COLORS[i % len(TEAM_COLORS)]
             teams.append(Team(
                 id=f"team_{i+1}",
-                name=f"Time {palette['name'].replace('Colete ', '')}",
+                name=f"Time {palette['label']}",
                 color=palette['color'],
                 players=[]
             ))
@@ -95,12 +87,33 @@ class MatchmakerService:
         return teams
 
     @staticmethod
-    def generate_round_robin_fixtures(teams: List[Team], rounds: int = 1) -> List[Match]:
-        """Gera a tabela completa de confrontos (todos contra todos) sem confrontos repetidos imediatos."""
+    def generate_round_robin_fixtures(
+        teams: List[Team],
+        rounds: int = 1,
+        first_match: Optional[Tuple[Optional[str], Optional[str]]] = None,
+    ) -> List[Match]:
+        """Gera a tabela completa de confrontos (todos contra todos) sem confrontos repetidos imediatos.
+
+        `first_match` = (mandante, visitante): ids dos times que abrem a primeira rodada.
+        Ids inválidos ou iguais são ignorados e a ordem padrão é mantida.
+        """
         if len(teams) < 2:
             return []
 
         team_ids = [t for t in teams]
+        opening = None
+        if first_match and first_match[0] and first_match[1] and first_match[0] != first_match[1]:
+            by_id = {t.id: t for t in teams}
+            if first_match[0] in by_id and first_match[1] in by_id:
+                opening = (by_id[first_match[0]], by_id[first_match[1]])
+        if opening:
+            others = [t for t in team_ids if t not in opening]
+            if len(team_ids) % 2 == 0:
+                # Rodada 1 do método do círculo pareia a posição 0 com a última
+                team_ids = [opening[0]] + others + [opening[1]]
+            else:
+                # Com ímpar, o "fantasma" ocupa a última posição; o par de abertura vai para 1 e n-2
+                team_ids = others[:1] + [opening[0]] + others[1:] + [opening[1]]
         if len(team_ids) % 2 != 0:
             # Time fantasma/bye se ímpar
             dummy_team = Team(id="bye", name="Folga", color="#000")
@@ -132,5 +145,11 @@ class MatchmakerService:
                         match_counter += 1
                 # Rotaciona times (algoritmo round-robin clássico)
                 current_teams = [current_teams[0]] + [current_teams[-1]] + current_teams[1:-1]
+
+        if opening:
+            # Partida de abertura vai para o topo da rodada 1 e os ids são renumerados em sequência
+            rounds_schedule.sort(key=lambda m: (m.round_number != 1 or m.home_team_id != opening[0].id or m.away_team_id != opening[1].id, m.round_number))
+            for idx, m in enumerate(rounds_schedule, start=1):
+                m.id = f"m_{idx}"
 
         return rounds_schedule

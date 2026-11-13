@@ -15,8 +15,22 @@ import time
 from app.domain.models import Player, Team, Match, SessionConfig, PeladaSession
 from app.domain.audit import AuditEvent, normalize_pelada_code, sanitize_audit_event
 from app.domain.matchmaker import MatchmakerService
+from app.domain.team_colors import TEAM_COLORS, is_team_color
+from app.domain.king_of_court import plan_next as king_plan_next
+from app.domain.championship_integrity import is_modified as championship_is_modified, RULE_KEYS
+from app.domain.fixture_moves import valid_drop_targets
+from app.domain.player_identity import apply_renames, clean_name, normalize_name, resolve_alias, validate_pool_links
+
+SAFE_ID_PATTERN = r"^[A-Za-z0-9_\-]{1,64}$"
+from app.domain.state_rules import (
+    aviso_times_sem_jogadores,
+    find_empty_team_in_new_fixtures,
+    find_state_inconsistency,
+    times_sem_jogadores,
+)
 from app.domain.pool import PELADA_CREATED_AT_FORMAT, earliest_pelada_date
 from app.domain.pelada_backup import BACKUP_FORMAT, BACKUP_VERSION, build_backup_document
+from app.domain.pool_graph import MAX_POOLS_POR_PELADA
 from app.domain.security import (
     hash_password,
     verify_password,
@@ -345,8 +359,21 @@ class ClaimAdminRequest(BaseModel):
     password: str = Field(..., max_length=64)
 
 
+class PoolLinkDTO(BaseModel):
+    player_id: str = Field(..., pattern=SAFE_ID_PATTERN)       # jogador da pelada atual
+    pool_player_id: str = Field(..., pattern=SAFE_ID_PATTERN)  # jogador já existente na pool
+
+
+class PoolRenameDTO(BaseModel):
+    player_id: str = Field(..., pattern=SAFE_ID_PATTERN)  # jogador novo da pelada atual
+    name: str = Field(..., min_length=1, max_length=60)
+
+
 class SetPoolRequest(BaseModel):
-    parent_code: Optional[str] = Field(None, max_length=10)
+    # Lista completa das pools diretas da pelada (vazia = sem pool). Substitui a lista anterior.
+    parent_codes: List[str] = Field(default_factory=list, max_length=MAX_POOLS_POR_PELADA)
+    links: List[PoolLinkDTO] = Field(default_factory=list, max_length=300)
+    renames: List[PoolRenameDTO] = Field(default_factory=list, max_length=300)
 
 
 class SetDescriptionRequest(BaseModel):
@@ -355,7 +382,6 @@ class SetDescriptionRequest(BaseModel):
 
 # Identificadores gerados pelo app (ex.: "p_1700000_42", "team_1", "m_3"). Restringir o formato evita que um id
 # com aspas ou símbolos seja interpolado em atributos HTML/JS no navegador.
-SAFE_ID_PATTERN = r"^[A-Za-z0-9_\-]{1,64}$"
 SAFE_ID_RE = re.compile(SAFE_ID_PATTERN)
 SAFE_ID_KEYS = ("id", "player_id", "team_id", "match_id", "home_team_id", "away_team_id")
 
@@ -385,10 +411,6 @@ class PlayerDTO(BaseModel):
         return trimmed
 
 
-# Cores de time vêm só da paleta do app (cada uma tem classe CSS gerada em static/css/ds.css)
-TEAM_COLOR_PALETTE = {"#84cc16", "#f97316", "#3b82f6", "#ef4444", "#eab308", "#64748b", "#a855f7", "#e2e8f0"}
-
-
 class TeamDTO(BaseModel):
     model_config = ConfigDict(extra="allow")
     id: str = Field(..., min_length=1, max_length=64, pattern=SAFE_ID_PATTERN)
@@ -398,7 +420,7 @@ class TeamDTO(BaseModel):
     @field_validator("color")
     @classmethod
     def color_in_palette(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v.lower() not in TEAM_COLOR_PALETTE:
+        if v is not None and not is_team_color(v):
             raise ValueError("Cor de time fora da paleta do app.")
         return v.lower() if v else v
     players: List[PlayerDTO] = Field(default_factory=list, max_length=50)
@@ -419,7 +441,20 @@ class ConfigDTO(BaseModel):
     championship_type: Optional[str] = Field("single", max_length=20)
     points_win: int = Field(3, ge=1, le=10)
     points_draw: int = Field(1, ge=0, le=5)
-    alarm_sound: Optional[str] = Field("standard-emergency-warning-signal.mp3", max_length=100)
+    first_match_home_id: Optional[str] = Field(None, max_length=64, pattern=SAFE_ID_PATTERN)
+    first_match_away_id: Optional[str] = Field(None, max_length=64, pattern=SAFE_ID_PATTERN)
+    king_draw_rule: str = Field("both", pattern=r"^(both|fewer_points|fewer_goals|fewer_wins|more_points|more_goals|more_wins)$")
+    king_max_consecutive_wins: int = Field(0, ge=0, le=50)
+    balance_stars_pct: int = Field(40, ge=0, le=100)
+    rules_baseline: Optional[Dict[str, Any]] = None
+
+    @field_validator("rules_baseline")
+    @classmethod
+    def only_rule_keys(cls, v: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if v is None:
+            return None
+        clean = {k: val for k, val in v.items() if k in RULE_KEYS and (val is None or isinstance(val, (str, int)))}
+        return {k: (val[:64] if isinstance(val, str) else val) for k, val in clean.items()}
 
 
 class SyncPeladaStateRequest(BaseModel):
@@ -439,6 +474,7 @@ class BalancePlayerDTO(BaseModel):
 class BalanceTeamsRequest(BaseModel):
     players: List[BalancePlayerDTO] = Field(..., max_length=300)
     players_per_team: int = Field(5, ge=2, le=20)
+    pelada_code: Optional[str] = Field(None, max_length=10)  # com pelada: usa histórico e % de estrelas configurado
 
 
 class ScheduleTeamDTO(BaseModel):
@@ -451,6 +487,30 @@ class ScheduleTeamDTO(BaseModel):
 class GenerateScheduleRequest(BaseModel):
     teams: List[ScheduleTeamDTO] = Field(..., max_length=50)
     rounds: int = Field(1, ge=1, le=10)
+    first_home_id: Optional[str] = Field(None, max_length=64, pattern=SAFE_ID_PATTERN)
+    first_away_id: Optional[str] = Field(None, max_length=64, pattern=SAFE_ID_PATTERN)
+
+
+class KingFixtureDTO(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field("", max_length=64)
+    round_number: Optional[int] = Field(None, ge=0, le=100000)
+    home_team_id: str = Field("", max_length=64)
+    away_team_id: str = Field("", max_length=64)
+    home_score: int = Field(0, ge=0, le=999)
+    away_score: int = Field(0, ge=0, le=999)
+    finished: bool = False
+
+
+class KingNextMatchRequest(BaseModel):
+    teams: List[ScheduleTeamDTO] = Field(..., max_length=50)
+    fixtures: List[KingFixtureDTO] = Field(default_factory=list, max_length=1000)
+    first_home_id: Optional[str] = Field(None, max_length=64, pattern=SAFE_ID_PATTERN)
+    first_away_id: Optional[str] = Field(None, max_length=64, pattern=SAFE_ID_PATTERN)
+    draw_rule: str = Field("both", pattern=r"^(both|fewer_points|fewer_goals|fewer_wins|more_points|more_goals|more_wins)$")
+    max_consecutive_wins: int = Field(0, ge=0, le=50)
+    points_win: int = Field(3, ge=1, le=10)
+    points_draw: int = Field(1, ge=0, le=5)
 
 
 class MatchSaveRequest(BaseModel):
@@ -520,7 +580,9 @@ class PeladaBackupInfoDTO(BaseModel):
 
 class PeladaBackupPoolDTO(BaseModel):
     model_config = ConfigDict(extra="ignore")  # a lista 'chain' é só informativa na importação
-    parent_code: Optional[str] = Field(None, max_length=10)
+    parent_codes: List[str] = Field(default_factory=list, max_length=MAX_POOLS_POR_PELADA)
+    parent_code: Optional[str] = Field(None, max_length=10)  # formato v1 (um pai só), lido na importação
+    player_aliases: Dict[str, str] = Field(default_factory=dict, max_length=300)
 
 
 class PeladaBackupDTO(BaseModel):
@@ -594,11 +656,12 @@ async def get_pelada_info(code: str, request: Request):
         "pool_started_at": await get_pool_started_at(chain),
         "has_password": bool(pelada.password_hash),
         "is_admin": await _is_admin(request, pelada.code),
+        "team_colors": list(TEAM_COLORS),
         "players": pelada.players,
         "teams": pelada.teams,
         "fixtures": pelada.fixtures,
         "config": (await repo.get_config(pelada.code)).__dict__,
-        "parent_code": pelada.parent_code,
+        "parent_codes": await repo.get_pelada_parent_codes(pelada.code),
         "chain_codes": chain
     }
 
@@ -662,38 +725,136 @@ async def pelada_live_events(code: str, request: Request):
     )
 
 
+async def _pool_candidates(parent_codes: List[str]) -> List[Dict[str, Any]]:
+    """Jogadores de todas as correntes das pools informadas, por id canônico, sem repetir."""
+    chain: List[str] = []
+    for parent in parent_codes:
+        for code in await repo.get_pelada_chain_codes(parent):
+            if code not in chain:  # peladas em comum entre pools contam uma vez
+                chain.append(code)
+    aliases: Dict[str, str] = {}
+    for code in chain:
+        aliases.update(await repo.get_player_aliases(code))
+    candidates: Dict[str, Dict[str, Any]] = {}
+    for code in chain:
+        pelada = await repo.get_pelada(code)
+        if not pelada:
+            continue
+        for p in pelada.players:
+            canonical = resolve_alias(str(p.get("id")), aliases)
+            if canonical not in candidates:
+                candidates[canonical] = {"id": canonical, "name": clean_name(p.get("name", "")), "source": pelada.name}
+    return sorted(candidates.values(), key=lambda c: normalize_name(c["name"]))
+
+
+@app.get("/api/peladas/{code}/pool-candidates")
+async def get_pool_candidates(code: str, request: Request, parent_code: List[str] = Query(default=[])):
+    """Jogadores das pools informadas e os vínculos já gravados desta pelada (para a janela pré-preenchê-la)."""
+    clean_code = _norm_code(code)
+    await require_admin_permission(request, clean_code)
+    parents = _normalizar_pais(parent_code, clean_code)
+    if not parents:
+        raise HTTPException(status_code=400, detail="Informe ao menos uma pelada anterior.")
+    for parent in parents:
+        await _require_pelada(parent)
+    atuais = await repo.get_player_aliases(clean_code)
+    candidatos = await _pool_candidates(parents)
+    ids_candidatos = {c["id"] for c in candidatos}
+    vinculos = {pid: alvo for pid, alvo in atuais.items() if alvo in ids_candidatos}
+    return {"candidates": candidatos, "links": vinculos}
+
+
+def _normalizar_pais(codigos: List[str], clean_code: str) -> List[str]:
+    """Códigos das pools sem repetição, em maiúsculas. Recusa a própria pelada como pool."""
+    parents: List[str] = []
+    for bruto in codigos:
+        parent = _norm_code(bruto) if bruto else ""
+        if not parent:
+            continue
+        if parent == clean_code:
+            raise HTTPException(status_code=400, detail="A pelada não pode ser vinculada a ela mesma.")
+        if parent not in parents:
+            parents.append(parent)
+    if len(parents) > MAX_POOLS_POR_PELADA:
+        raise HTTPException(status_code=400, detail=f"Uma pelada pode ter no máximo {MAX_POOLS_POR_PELADA} pools.")
+    return parents
+
+
 @app.post("/api/peladas/{code}/pool")
 async def link_pelada_pool(code: str, req: SetPoolRequest, request: Request):
-    """Vincula a pelada atual a uma pelada anterior na corrente (pool). Exige administração."""
+    """Define as pools diretas da pelada atual (grafo: várias pools). Exige administração."""
     clean_code = _norm_code(code)
     await require_admin_permission(request, clean_code)
 
-    parent = _norm_code(req.parent_code) if req.parent_code else None
+    parents = _normalizar_pais(req.parent_codes, clean_code)
+    renames_map: Dict[str, str] = {}
+    link_map: Dict[str, str] = {}
 
-    if parent:
-        if parent == clean_code:
-            raise HTTPException(status_code=400, detail="A pelada não pode ser vinculada a ela mesma.")
-        target = await repo.get_pelada(parent)
-        if not target:
+    for parent in parents:
+        if not await repo.get_pelada(parent):
             raise HTTPException(status_code=404, detail=f"A pelada anterior com código #{parent} não foi encontrada.")
-
-        # Previne ciclo: verifica se o código atual já está na corrente do alvo
-        target_chain = await repo.get_pelada_chain_codes(parent)
-        if clean_code in target_chain:
+        # Previne ciclo: a pelada atual não pode já estar na corrente de uma das novas pools
+        if clean_code in await repo.get_pelada_chain_codes(parent):
             raise HTTPException(status_code=400, detail="Vínculo inválido: formaria um ciclo de corrente entre peladas.")
 
-    await repo.set_pelada_parent_code(clean_code, parent)
+    if parents:
+        current = await repo.get_pelada(clean_code)
+        renames_map = {r.player_id: clean_name(r.name) for r in req.renames}
+        error, link_map = validate_pool_links(
+            current.players if current else [],
+            await _pool_candidates(parents),
+            [l.model_dump() for l in req.links],
+            renames_map,
+        )
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+        if renames_map and current:
+            new_players, new_teams, new_fixtures = apply_renames(current.players, current.teams, current.fixtures, renames_map)
+            await repo.save_pelada_state(clean_code, new_players, new_teams, new_fixtures)
+            await broadcaster.broadcast(
+                pelada_code=clean_code,
+                event_type="state_updated",
+                data={"players": new_players, "teams": new_teams, "fixtures": new_fixtures,
+                      "config": (await repo.get_config(clean_code)).__dict__}
+            )
+
+    # Vínculos de identidade ficam nesta pelada; sem pool (ou ao desvincular) são removidos
+    await repo.set_player_aliases(clean_code, link_map if parents else {})
+    await repo.set_pelada_parent_codes(clean_code, parents)
+    return await _resposta_pool(clean_code, parents)
+
+
+@app.delete("/api/peladas/{code}/pool/{parent_code}")
+async def remove_pelada_pool(code: str, parent_code: str, request: Request):
+    """Remove uma pool específica. Vínculos de jogadores com ela são desfeitos; os das outras pools ficam."""
+    clean_code = _norm_code(code)
+    await require_admin_permission(request, clean_code)
+    alvo = _norm_code(parent_code)
+    atuais = await repo.get_pelada_parent_codes(clean_code)
+    if alvo not in atuais:
+        raise HTTPException(status_code=404, detail=f"Esta pelada não está vinculada à pool #{alvo}.")
+
+    restantes = [p for p in atuais if p != alvo]
+    ids_restantes = {c["id"] for c in await _pool_candidates(restantes)} if restantes else set()
+    mantidos = {pid: destino for pid, destino in (await repo.get_player_aliases(clean_code)).items() if destino in ids_restantes}
+    await repo.set_player_aliases(clean_code, mantidos)
+    await repo.set_pelada_parent_codes(clean_code, restantes)
+    return await _resposta_pool(clean_code, restantes)
+
+
+async def _resposta_pool(clean_code: str, parents: List[str]) -> Dict[str, Any]:
+    """Estado da corrente depois de uma mudança de pool; também avisa as outras abas pelo SSE."""
     updated_chain = await repo.get_pelada_chain_codes(clean_code)
     pool_started_at = await get_pool_started_at(updated_chain)
     await broadcaster.broadcast(
         pelada_code=clean_code,
         event_type="pool_updated",
-        data={"parent_code": parent, "chain_codes": updated_chain, "pool_started_at": pool_started_at}
+        data={"parent_codes": parents, "chain_codes": updated_chain, "pool_started_at": pool_started_at}
     )
     return {
         "status": "ok",
         "message": f"Pool de peladas atualizado com sucesso! ({len(updated_chain)} pelada(s) encadeada(s))",
-        "parent_code": parent,
+        "parent_codes": parents,
         "chain_codes": updated_chain,
         "pool_started_at": pool_started_at
     }
@@ -808,6 +969,13 @@ async def sync_pelada_state(code: str, req: SyncPeladaStateRequest, request: Req
     players = [p.model_dump() for p in req.players]
     teams = [t.model_dump() for t in req.teams]
     fixtures = [f.model_dump() for f in req.fixtures]
+    inconsistency = find_state_inconsistency(players, teams, fixtures)
+    if inconsistency:
+        raise HTTPException(status_code=400, detail=inconsistency)
+    known_fixture_ids = {f.get("id") for f in (pelada.fixtures or [])}
+    empty_team_error = find_empty_team_in_new_fixtures(teams, fixtures, known_fixture_ids)
+    if empty_team_error:
+        raise HTTPException(status_code=400, detail=empty_team_error)
     await repo.save_pelada_state(clean_code, players, teams, fixtures)
     if req.config is not None:
         known = SessionConfig.__dataclass_fields__.keys()
@@ -847,8 +1015,9 @@ async def export_pelada(code: str, request: Request):
         created_at=pelada.created_at,
         description=pelada.description,
         config=config.__dict__,
-        parent_code=pelada.parent_code,
+        parent_codes=await repo.get_pelada_parent_codes(pelada.code),
         pool_chain=pool_chain,
+        player_aliases=await repo.get_player_aliases(pelada.code),
         players=pelada.players,
         teams=pelada.teams,
         fixtures=pelada.fixtures,
@@ -881,11 +1050,18 @@ async def import_pelada(code: str, backup: PeladaBackupDTO, request: Request):
     if file_code != clean_code:
         warnings.append(f"O arquivo é da pelada #{file_code}. Os dados foram gravados na pelada #{clean_code}.")
 
-    parent_code = _norm_code(backup.pool.parent_code) if backup.pool.parent_code else None
-    if parent_code == clean_code:
-        parent_code = None  # uma pelada não pode ser vinculada a ela mesma
-    elif parent_code and not await repo.get_pelada(parent_code):
-        warnings.append(f"A pelada anterior #{parent_code} não existe neste servidor. O vínculo foi mantido, mas a corrente fica incompleta.")
+    # Arquivo v2 traz pool.parent_codes; arquivo v1 traz pool.parent_code (um pai só)
+    brutos = list(backup.pool.parent_codes) + ([backup.pool.parent_code] if backup.pool.parent_code else [])
+    parents: List[str] = []
+    for parent in dict.fromkeys(_norm_code(b) for b in brutos if b):
+        if parent == clean_code:
+            continue  # uma pelada não pode ser vinculada a ela mesma
+        if not await repo.get_pelada(parent):
+            warnings.append(f"A pelada anterior #{parent} não existe neste servidor. O vínculo foi mantido, mas a corrente fica incompleta.")
+        elif clean_code in await repo.get_pelada_chain_codes(parent):
+            warnings.append(f"O vínculo com a pool #{parent} foi ignorado: formaria um ciclo de corrente.")
+            continue
+        parents.append(parent)
 
     config_fields = SessionConfig.__dataclass_fields__.keys()
     config = SessionConfig(**{k: v for k, v in backup.pelada.config.model_dump().items() if k in config_fields and v is not None})
@@ -902,10 +1078,12 @@ async def import_pelada(code: str, backup: PeladaBackupDTO, request: Request):
         teams=[t.model_dump() for t in backup.teams],
         fixtures=[f.model_dump() for f in backup.fixtures],
         config=config.__dict__,
-        parent_code=parent_code,
         description=backup.pelada.description,
     )
     await repo.overwrite_pelada(pelada, config, matches)
+    await repo.set_pelada_parent_codes(clean_code, parents)
+    # Vínculos de identidade com a pool voltam junto com o vínculo de pool
+    await repo.set_player_aliases(clean_code, dict(backup.pool.player_aliases) if parents else {})
 
     await broadcaster.broadcast(
         pelada_code=clean_code,
@@ -995,6 +1173,17 @@ async def balance_teams(req: BalanceTeamsRequest):
         Player(id=p.id, name=p.name.strip(), level=p.level, is_goalkeeper=p.is_goalkeeper)
         for p in req.players
     ]
+    if req.pelada_code:
+        clean_code = _norm_code(req.pelada_code)
+        await _require_pelada(clean_code)
+        cfg = await repo.get_config(clean_code)
+        stats = await repo.get_players_stats(pelada_code=clean_code)
+        aliases = await repo.get_chain_player_aliases(clean_code)
+        for pl in players:
+            pl_stats = stats.get(resolve_alias(str(pl.id), aliases)) or stats.get(pl.name.strip().lower())
+            pl.effective_level = MatchmakerService.calculate_effective_level(
+                pl.level, pl_stats, stars_pct=cfg.balance_stars_pct
+            )
     teams = MatchmakerService.balance_teams(players, req.players_per_team)
     return [
         {
@@ -1009,6 +1198,9 @@ async def balance_teams(req: BalanceTeamsRequest):
 @app.post("/api/generate-schedule")
 async def generate_schedule(req: GenerateScheduleRequest):
     """Gera a tabela completa de confrontos (turnos e jogos) para os times (cálculo puro, sem gravação)."""
+    sem_jogadores = times_sem_jogadores([t.model_dump() for t in req.teams])
+    if sem_jogadores:
+        raise HTTPException(status_code=400, detail=aviso_times_sem_jogadores([t["name"] for t in sem_jogadores]))
     teams = [
         Team(
             id=t.id,
@@ -1019,9 +1211,14 @@ async def generate_schedule(req: GenerateScheduleRequest):
         for t in req.teams
     ]
 
-    schedule = MatchmakerService.generate_round_robin_fixtures(teams, req.rounds)
-    return [
-        {
+    schedule = MatchmakerService.generate_round_robin_fixtures(
+        teams, req.rounds, first_match=(req.first_home_id, req.first_away_id)
+    )
+    return [_match_to_dict(m) for m in schedule]
+
+
+def _match_to_dict(m: Match) -> Dict[str, Any]:
+    return {
             "id": m.id,
             "round_number": m.round_number,
             "home_team_id": m.home_team_id,
@@ -1038,8 +1235,72 @@ async def generate_schedule(req: GenerateScheduleRequest):
             "finished": m.finished,
             "played_at": m.played_at
         }
-        for m in schedule
+
+
+class ChampionshipCheckRequest(BaseModel):
+    championship_type: str = Field("single", max_length=20)
+    team_ids: List[str] = Field(default_factory=list, max_length=50)
+    fixtures: List[KingFixtureDTO] = Field(default_factory=list, max_length=1000)
+    draw_rule: str = Field("both", pattern=r"^(both|fewer_points|fewer_goals|fewer_wins|more_points|more_goals|more_wins)$")
+    max_consecutive_wins: int = Field(0, ge=0, le=50)
+    points_win: int = Field(3, ge=1, le=10)
+    points_draw: int = Field(1, ge=0, le=5)
+    rules: Dict[str, Any] = Field(default_factory=dict)
+    rules_baseline: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/championship/check")
+async def championship_check(req: ChampionshipCheckRequest):
+    """Informa se a tabela atual foge das regras do formato (cálculo puro, sem gravação)."""
+    modified = championship_is_modified(
+        req.championship_type, req.team_ids, [f.model_dump() for f in req.fixtures],
+        rules=req.rules, rules_baseline=req.rules_baseline,
+        draw_rule=req.draw_rule, max_consecutive_wins=req.max_consecutive_wins,
+        points_win=req.points_win, points_draw=req.points_draw,
+    )
+    return {"modified": modified}
+
+
+class ChampionshipDropTargetsRequest(ChampionshipCheckRequest):
+    moved_id: str = Field(..., max_length=64)
+
+
+@app.post("/api/championship/drop-targets")
+async def championship_drop_targets(req: ChampionshipDropTargetsRequest):
+    """Onde soltar a partida arrastada sem quebrar o formato (cálculo puro, sem gravação)."""
+    return valid_drop_targets(
+        req.championship_type, req.team_ids, [f.model_dump() for f in req.fixtures], req.moved_id,
+        draw_rule=req.draw_rule, max_consecutive_wins=req.max_consecutive_wins,
+        points_win=req.points_win, points_draw=req.points_draw,
+    )
+
+
+@app.post("/api/king/next-match")
+async def king_next_match(req: KingNextMatchRequest):
+    """Próxima partida do Rei da Pelada a partir do histórico (cálculo puro, sem gravação)."""
+    teams_dict = [t.model_dump() for t in req.teams]
+    teams = [
+        Team(
+            id=t.id,
+            name=t.name,
+            color=t.color,
+            players=[Player(id=p.id, name=p.name, level=p.level, is_goalkeeper=p.is_goalkeeper) for p in t.players],
+        )
+        for t in req.teams
     ]
+    match, queue = king_plan_next(
+        teams, [f.model_dump() for f in req.fixtures],
+        start_pair=[req.first_home_id, req.first_away_id],
+        draw_rule=req.draw_rule,
+        max_consecutive_wins=req.max_consecutive_wins,
+        points_win=req.points_win,
+        points_draw=req.points_draw,
+    )
+    if match:
+        erro = find_empty_team_in_new_fixtures(teams_dict, [_match_to_dict(match)], set())
+        if erro:
+            raise HTTPException(status_code=400, detail=erro)
+    return {"match": _match_to_dict(match) if match else None, "queue": queue}
 
 @app.post("/api/matches/save")
 async def save_match_result(req: MatchSaveRequest, request: Request, pelada_code: str = Query(..., max_length=10)):

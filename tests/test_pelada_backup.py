@@ -3,6 +3,7 @@ import aiosqlite
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from tests.pool_helpers import vincular_pool
 
 
 PLAYERS = [{"id": f"p_{i}", "name": n, "level": 3, "is_goalkeeper": i == 1}
@@ -17,7 +18,7 @@ MATCH = {"id": "m_1", "round_number": 1, "home_team_id": "team_1", "home_team_na
          "notes": "Jogo com chuva"}
 MATCH_2 = {**MATCH, "id": "m_2", "home_score": 0, "away_score": 0, "notes": "Depois da exportação"}
 CONFIG = {"players_per_team": 6, "match_duration_minutes": 12, "total_rounds": 2,
-          "championship_type": "double", "points_win": 3, "points_draw": 1, "alarm_sound": "standard-emergency-warning-signal.mp3"}
+          "championship_type": "double", "points_win": 3, "points_draw": 1}
 
 
 async def _criar_pelada_com_historico(client, name="Pelada Origem"):
@@ -43,7 +44,7 @@ async def test_export_contem_dados_completos_sem_senha(async_client):
     assert f'futmatch-{code}.json' in res.headers["content-disposition"]
     doc = res.json()
 
-    assert doc["format"] == "futmatch-pelada" and doc["version"] == 1
+    assert doc["format"] == "futmatch-pelada" and doc["version"] == 2
     assert doc["pelada"]["code"] == code
     assert doc["pelada"]["name"] == "Pelada Origem"
     assert doc["pelada"]["description"] == "Quadra do parque"
@@ -55,7 +56,7 @@ async def test_export_contem_dados_completos_sem_senha(async_client):
     assert len(doc["matches"]) == 1
     assert doc["matches"][0]["played_at"]
     assert doc["matches"][0]["notes"] == "Jogo com chuva"
-    assert doc["pool"] == {"parent_code": None, "chain": []}
+    assert doc["pool"] == {"parent_codes": [], "chain": [], "player_aliases": {}}
     assert "password_hash" not in res.text
     assert "senha_origem" not in res.text
 
@@ -98,41 +99,41 @@ async def test_import_exige_administracao(async_client):
 async def test_import_restaura_vinculo_de_pool(async_client):
     anterior = await _criar_pelada_com_historico(async_client, name="Pelada Anterior")
     atual = await _criar_pelada_com_historico(async_client, name="Pelada Atual")
-    assert (await async_client.post(f"/api/peladas/{atual}/pool", json={"parent_code": anterior})).status_code == 200
+    assert (await vincular_pool(async_client, atual, anterior)).status_code == 200
     arquivo = (await async_client.get(f"/api/peladas/{atual}/export")).json()
-    assert arquivo["pool"]["parent_code"] == anterior
+    assert arquivo["pool"]["parent_codes"] == [anterior]
     assert [c["code"] for c in arquivo["pool"]["chain"]] == [anterior]
 
     # Tira a pelada da pool e depois importa o arquivo: o vínculo volta
-    assert (await async_client.post(f"/api/peladas/{atual}/pool", json={"parent_code": None})).status_code == 200
+    assert (await async_client.post(f"/api/peladas/{atual}/pool", json={"parent_codes": []})).status_code == 200
     res = await async_client.post(f"/api/peladas/{atual}/import", json=arquivo)
     assert res.status_code == 200
     assert not any("anterior" in w for w in res.json()["warnings"])
 
     exportado = (await async_client.get(f"/api/peladas/{atual}/export")).json()
-    assert exportado["pool"]["parent_code"] == anterior
+    assert exportado["pool"]["parent_codes"] == [anterior]
 
 
 async def test_import_avisa_quando_pelada_anterior_nao_existe(async_client):
     code = await _criar_pelada_com_historico(async_client)
     arquivo = (await async_client.get(f"/api/peladas/{code}/export")).json()
-    arquivo["pool"] = {"parent_code": "ZZZZZ", "chain": []}
+    arquivo["pool"] = {"parent_code": "ZZZZZ", "chain": []}  # formato v1, ainda aceito na importação
 
     res = await async_client.post(f"/api/peladas/{code}/import", json=arquivo)
     assert res.status_code == 200
     assert any("ZZZZZ" in w for w in res.json()["warnings"])
     exportado = (await async_client.get(f"/api/peladas/{code}/export")).json()
-    assert exportado["pool"]["parent_code"] == "ZZZZZ"
+    assert exportado["pool"]["parent_codes"] == ["ZZZZZ"]
 
 
 async def test_import_nunca_vincula_pelada_a_ela_mesma(async_client):
     code = await _criar_pelada_com_historico(async_client)
     arquivo = (await async_client.get(f"/api/peladas/{code}/export")).json()
-    arquivo["pool"] = {"parent_code": code, "chain": []}
+    arquivo["pool"] = {"parent_codes": [code], "chain": []}
 
     assert (await async_client.post(f"/api/peladas/{code}/import", json=arquivo)).status_code == 200
     exportado = (await async_client.get(f"/api/peladas/{code}/export")).json()
-    assert exportado["pool"]["parent_code"] is None
+    assert exportado["pool"]["parent_codes"] == []
 
 
 async def test_import_de_arquivo_de_outra_pelada_grava_na_atual(async_client):

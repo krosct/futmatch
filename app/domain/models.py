@@ -55,11 +55,17 @@ class Match:
 class SessionConfig:
     players_per_team: int = 5
     match_duration_minutes: int = 10
-    total_rounds: int = 1  # 1 = turno único, 2 = turno e retorno, 0 = formato livre
-    championship_type: str = "single"  # "single" (Turno Único), "double" (Turno e Retorno), "custom" (Livre)
+    total_rounds: int = 1  # 1 = turno único, 2 = turno e retorno, 0 = livre ou Rei da Pelada
+    championship_type: str = "single"  # "single" (Turno Único), "double" (Turno e Retorno), "custom" (Livre), "king" (Rei da Pelada)
     points_win: int = 3
     points_draw: int = 1
-    alarm_sound: str = "standard-emergency-warning-signal.mp3"
+    # Regras por formato
+    first_match_home_id: Optional[str] = None  # time que abre o jogo (turnos e Rei da Pelada)
+    first_match_away_id: Optional[str] = None
+    king_draw_rule: str = "both"  # Rei da Pelada: quem sai em caso de empate
+    king_max_consecutive_wins: int = 0  # Rei da Pelada: vitórias seguidas até sair (0 = sem limite)
+    rules_baseline: Optional[Dict[str, Any]] = None  # regras vigentes quando a tabela foi montada (base do [MOD])
+    balance_stars_pct: int = 40  # % das estrelas manuais no sorteio (o restante vem do desempenho no histórico)
 
 @dataclass
 class PeladaSession:
@@ -71,7 +77,6 @@ class PeladaSession:
     teams: List[Dict[str, Any]] = field(default_factory=list)
     fixtures: List[Dict[str, Any]] = field(default_factory=list)
     config: Dict[str, Any] = field(default_factory=dict)
-    parent_code: Optional[str] = None
     description: str = ""
 
 

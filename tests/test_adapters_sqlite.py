@@ -26,8 +26,8 @@ async def test_pelada_pool_chain(temp_db: SQLiteMatchRepository):
     await temp_db.create_pelada("ROD03", "", "Rodada 3")
 
     # Vincular ROD03 -> ROD02 -> ROD01
-    await temp_db.set_pelada_parent_code("ROD02", "ROD01")
-    await temp_db.set_pelada_parent_code("ROD03", "ROD02")
+    await temp_db.set_pelada_parent_codes("ROD02", ["ROD01"])
+    await temp_db.set_pelada_parent_codes("ROD03", ["ROD02"])
 
     chain = await temp_db.get_pelada_chain_codes("ROD03")
     assert chain == ["ROD03", "ROD02", "ROD01"]
@@ -52,6 +52,7 @@ async def test_save_and_list_matches(temp_db: SQLiteMatchRepository):
         finished=True
     )
     await temp_db.save_match(m1, pelada_code="PEL01")
+    await temp_db.save_pelada_state("PEL01", [], [], [{"id": "match-1", "finished": True}])
 
     matches = await temp_db.list_matches(pelada_code="PEL01")
     assert len(matches) == 1
@@ -87,6 +88,7 @@ async def test_dashboard_metrics(temp_db: SQLiteMatchRepository):
         finished=True
     )
     await temp_db.save_match(m, pelada_code="DASH1")
+    await temp_db.save_pelada_state("DASH1", [], [], [{"id": "m-dash", "finished": True}])
 
     stats = await temp_db.get_players_stats(pelada_code="DASH1")
     assert "p1" in stats
@@ -127,3 +129,38 @@ async def test_admin_token_persistence(temp_db: SQLiteMatchRepository):
 
     await temp_db.delete_admin_token(token)
     assert await temp_db.get_admin_token(token) is None
+
+async def test_historico_e_pool_seguem_tabela_de_jogos(temp_db: SQLiteMatchRepository):
+    """Histórico = pool + tabela de jogos atual: partida removida da tabela sai das estatísticas."""
+    await temp_db.create_pelada("POOLA", "", "Anterior")
+    await temp_db.create_pelada("POOLB", "", "Atual")
+    await temp_db.set_pelada_parent_codes("POOLB", ["POOLA"])
+    m_a = Match(id="ma", round_number=1, home_team_id="t1", home_team_name="Verde", away_team_id="t2",
+                away_team_name="Azul", home_score=2, away_score=0, home_players=[], away_players=[],
+                events=[{"player_id": "p1", "player_name": "Ana", "team_id": "t1", "event_type": "goal"}],
+                winner_team_id="t1", finished=True)
+    m_b = Match(id="mb", round_number=1, home_team_id="t1", home_team_name="Verde", away_team_id="t2",
+                away_team_name="Azul", home_score=1, away_score=0, home_players=[], away_players=[],
+                events=[{"player_id": "p1", "player_name": "Ana", "team_id": "t1", "event_type": "goal"}],
+                winner_team_id="t1", finished=True)
+    await temp_db.save_match(m_a, pelada_code="POOLA")
+    await temp_db.save_match(m_b, pelada_code="POOLB")
+    await temp_db.save_pelada_state("POOLA", [], [], [{"id": "ma", "finished": True}])
+    await temp_db.save_pelada_state("POOLB", [], [], [{"id": "mb", "finished": True}])
+
+    metrics = await temp_db.get_dashboard_metrics(pelada_code="POOLB")
+    assert metrics["summary"]["total_matches"] == 2
+    assert metrics["summary"]["total_goals"] == 3
+
+    # Remover a partida da tabela da pelada atual tira só ela do histórico
+    await temp_db.save_pelada_state("POOLB", [], [], [])
+    metrics = await temp_db.get_dashboard_metrics(pelada_code="POOLB")
+    assert metrics["summary"]["total_matches"] == 1
+    assert metrics["summary"]["total_goals"] == 2
+
+    # Sem nenhuma partida nas tabelas, o histórico zera mesmo que a linha ainda exista no banco
+    await temp_db.save_pelada_state("POOLA", [], [], [])
+    metrics = await temp_db.get_dashboard_metrics(pelada_code="POOLB")
+    assert metrics["summary"]["total_matches"] == 0
+    assert metrics["summary"]["total_goals"] == 0
+    assert metrics["top_scorers"] == [] or metrics["top_scorers"][0]["goals"] == 0
