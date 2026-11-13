@@ -30,7 +30,7 @@
 
 
 
-  <link rel="stylesheet" href="/static/css/app.css?v=2">
+  <link rel="stylesheet" href="/static/css/app.css?v=6">
   <link rel="stylesheet" href="/static/css/ds.css">
 </head>
 
@@ -63,9 +63,8 @@
       
       <!-- Brand & Header -->
       <div class="space-y-3">
-        <div class="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-tr from-emerald-600 to-neon-accent text-black font-black text-4xl shadow-2xl shadow-emerald-500/30 transform hover:rotate-6 transition">
-          ⚽
-        </div>
+        <img src="/static/icons/icon-512.png" alt="Logo FutMatch" width="80" height="80" class="inline-block w-20 h-20 rounded-3xl shadow-2xl shadow-emerald-500/30 transform hover:rotate-6 transition">
+
         <h1 class="text-4xl sm:text-5xl font-black tracking-tight text-white">
           Fut<span class="text-neon-accent drop-shadow-[0_0_20px_rgba(0,245,155,0.4)]">Match</span>
         </h1>
@@ -80,8 +79,8 @@
         <!-- Bloco 1: Criar Nova Pelada -->
         <div class="p-5 rounded-2xl bg-card/80 border border-borderLight hover:border-emerald-500/40 transition group">
           <div class="flex items-center gap-3 mb-2">
-            <div class="w-10 h-10 rounded-xl bg-neon-accent/10 border border-neon-accent/30 flex items-center justify-center text-neon-accent">
-              <i data-lucide="plus-circle" class="w-5 h-5"></i>
+            <div class="w-10 h-10 rounded-xl caixa-sucesso flex items-center justify-center">
+              <i data-lucide="plus-circle" class="w-5 h-5 icone-sucesso"></i>
             </div>
             <div>
               <h2 class="text-base font-bold text-white group-hover:text-neon-accent transition">Criar Nova Pelada</h2>
@@ -143,22 +142,26 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3 min-h-16">
       
       <!-- Logo, Branding & Status da Pelada -->
-      <div class="flex items-center space-x-3 cursor-pointer select-none flex-shrink-0" data-h-click="switchTab" data-a='["matchmaker"]'>
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-neon-accent flex items-center justify-center text-black font-black text-xl shadow-lg shadow-emerald-900/40">
-          ⚽
-        </div>
-        <div>
-          <div class="flex items-center space-x-2">
-            <h1 class="text-xl font-black tracking-tight text-white leading-none">Fut<span class="text-neon-accent">Match</span></h1>
-            <span class="text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 leading-none">PRO</span>
+      <div class="flex items-center gap-[19px] flex-shrink-0">
+        <div class="flex items-center space-x-3 select-none">
+          <div class="flex items-center space-x-3 cursor-pointer" data-h-click="switchTab" data-a='["matchmaker"]'>
+            <img src="/static/icons/icon-192.png" alt="Logo FutMatch" width="40" height="40" class="w-10 h-10 rounded-xl shadow-lg shadow-emerald-900/40">
+
+            <h1 class="text-[2.2rem] sm:text-[2.6rem] font-black tracking-tight text-white leading-none">Fut<span class="text-neon-accent">Match</span></h1>
           </div>
-          <div class="flex items-center gap-1.5 mt-1">
-            <span id="current-pelada-code-display" class="inline-flex items-center justify-center h-5 font-mono text-[10px] font-bold text-neon-accent bg-emerald-950/70 border border-emerald-500/30 px-2 rounded-md cursor-pointer select-none hover:bg-emerald-900/80 transition leading-none flex-shrink-0" data-h-click="copiarCodigoPelada" title="Clique para copiar código">#-----</span>
+          <div class="flex flex-col items-start gap-1">
             <span id="role-badge" class="inline-flex items-center justify-center h-5 text-[10px] font-bold px-1.5 sm:px-2 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 gap-1 leading-none flex-shrink-0">
               <i data-lucide="eye" class="w-2.5 h-2.5"></i>
               <span>Espectador</span>
             </span>
+            <span id="current-pelada-code-display" class="inline-flex items-center justify-center h-5 font-mono text-[10px] font-bold text-neon-accent bg-emerald-950/70 border border-emerald-500/30 px-2 rounded-md cursor-pointer select-none hover:bg-emerald-900/80 transition leading-none flex-shrink-0" data-h-click="copiarCodigoPelada" title="Clique para copiar código">#-----</span>
           </div>
+        </div>
+
+        <!-- Divisor e status: bolinha verde piscando quando há partida em andamento -->
+        <div class="flex items-center gap-3 flex-shrink-0">
+          <span aria-hidden="true" class="w-px h-10 bg-gradient-to-b from-transparent via-borderLight to-transparent"></span>
+          <span id="pelada-status-dot" data-h-click="irParaPartidaEmAndamento" class="relative inline-flex h-2.5 w-2.5 cursor-pointer" title="Nenhuma partida em andamento"><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-slate-500"></span></span>
         </div>
       </div>
 
@@ -173,7 +176,6 @@
         <button data-h-click="switchTab" data-a='["fixtures"]' id="tab-btn-fixtures" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
           <i data-lucide="trophy" class="w-3.5 h-3.5 pointer-events-none"></i>
           <span class="pointer-events-none">Jogos da Rodada</span>
-          <span id="badge-pending-matches" class="hidden text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold pointer-events-none">0</span>
         </button>
         <button data-h-click="switchTab" data-a='["dashboard"]' id="tab-btn-dashboard" class="nav-tab relative z-10 flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors duration-200 text-slate-400 hover:text-white">
           <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 pointer-events-none"></i>
@@ -350,15 +352,13 @@
                   <i data-lucide="shield" class="w-5 h-5 text-neon-accent"></i>
                   <span>Times Montados</span>
                   <div class="relative group/info inline-flex items-center">
-                    <button type="button" aria-label="Informações do cálculo" title="Balanceamento: 40% estrelas base + 60% histórico recente (vitórias e gols)" class="text-slate-400 hover:text-neon-accent transition cursor-help flex items-center justify-center p-0.5 rounded-full focus:outline-none">
+                    <button type="button" id="info-balanceamento-btn" aria-label="Informações do cálculo" class="icone-info transition cursor-help flex items-center justify-center p-0.5 rounded-full focus:outline-none">
                       <i data-lucide="info" class="w-4 h-4 stroke-[2]"></i>
                     </button>
-                    <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/info:block pointer-events-none z-50 w-64 p-2 bg-slate-900/95 backdrop-blur border border-borderLight text-slate-200 text-xs rounded-xl shadow-2xl text-center leading-snug">
-                      Balanceamento: 40% estrelas base + 60% histórico recente (vitórias e gols).
-                    </div>
+                    <div id="info-balanceamento-texto" class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/info:block pointer-events-none z-50 w-64 p-2 bg-slate-900/95 backdrop-blur border border-borderLight text-slate-200 text-xs rounded-xl shadow-2xl text-center leading-snug"></div>
                   </div>
                 </h3>
-                <p class="text-xs text-slate-400">Distribuição com equilíbrio por nível e posições</p>
+                <p class="text-xs text-slate-400">Distribuição com equilíbrio por nível e performance histórica</p>
                 <p id="last-combination-info" class="text-[11px] text-slate-400 mt-0.5 empty:hidden"></p>
               </div>
 
@@ -399,9 +399,7 @@
       <div class="bg-surface border border-borderLight p-6 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4">
         <div>
           <h2 class="text-2xl font-black text-white flex items-center gap-2">
-            <span>Rodadas e Confrontos</span>
-            <span id="label-active-round" class="whitespace-nowrap text-xs bg-neon-accent/20 text-neon-accent px-3 py-1 rounded-full border border-neon-accent/30 font-bold">Ao Vivo</span>
-          </h2>
+            <span>Rodadas e Confrontos<span id="fixtures-format-name"></span> <span id="fixtures-mod-flag" class="hidden text-amber-400" title="Edições do admin fugiram das regras do formato">[MOD]</span></span>          </h2>
         </div>
 
         <div class="flex items-center gap-2">
@@ -480,7 +478,7 @@
             <span>Artilheiro Máximo</span>
             <i data-lucide="award" class="w-4 h-4 text-amber-400"></i>
           </div>
-          <div id="kpi-top-scorer" class="text-xl font-black text-white truncate">-</div>
+          <div id="kpi-top-scorer" class="text-3xl font-black text-white truncate">-</div>
           <div class="text-[11px] text-amber-400 font-semibold" id="kpi-top-scorer-goals">
             0 gols
           </div>
@@ -491,7 +489,7 @@
             <span>Maior Vencedor</span>
             <i data-lucide="crown" class="w-4 h-4 text-yellow-400"></i>
           </div>
-          <div id="kpi-top-winner" class="text-xl font-black text-white truncate">-</div>
+          <div id="kpi-top-winner" class="text-3xl font-black text-white truncate">-</div>
           <div class="text-[11px] text-yellow-400 font-semibold" id="kpi-top-winner-rate">
             0 vitórias (0%)
           </div>
@@ -674,7 +672,7 @@
           </div>
 
           <div class="flex items-center gap-2">
-            <button id="btn-export-pdf" data-h-click="exportarRelatorioPDF" disabled class="text-xs px-3.5 py-1.5 bg-neon-accent/15 hover:bg-neon-accent/25 text-neon-accent border border-neon-accent/40 rounded-xl transition flex items-center gap-1.5 font-semibold shadow-sm hover:shadow-neon-glow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-accent/15 disabled:hover:shadow-none" title="Nenhuma partida finalizada para gerar relatório">
+            <button id="btn-export-pdf" data-h-click="exportarRelatorioPDF" disabled class="admin-only text-xs px-3.5 py-1.5 bg-neon-accent/15 hover:bg-neon-accent/25 text-neon-accent border border-neon-accent/40 rounded-xl transition flex items-center gap-1.5 font-semibold shadow-sm hover:shadow-neon-glow disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-accent/15 disabled:hover:shadow-none" title="Nenhuma partida finalizada para gerar relatório">
               <i data-lucide="file-down" class="w-3.5 h-3.5"></i>
               <span id="btn-export-pdf-text">Gerar PDF</span>
             </button>
@@ -726,6 +724,128 @@
           <section id="section-settings" class="space-y-6">
       <div class="max-w-2xl mx-auto space-y-6">
         
+        <!-- Configurações da Pelada -->
+        <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div class="border-b border-borderLight pb-4 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                <i data-lucide="sliders" class="w-5 h-5 text-neon-accent"></i>
+                <span>Configurações da Pelada</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-1">Parâmetros padrão para o sorteio e cálculo das partidas.</p>
+            </div>
+            <span class="text-[11px] font-semibold text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+              <i data-lucide="check-circle" class="w-3 h-3"></i>
+              <span>Salvamento automático</span>
+            </span>
+          </div>
+
+          <form id="form-config" data-h-submit="submitConfiguracoes" data-a='["@event"]' class="space-y-4">
+            
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Jogadores por Time na Linha / Total</label>
+              <input type="number" id="cfg-players-per-team" min="2" max="11" value="5" data-h-input="autoSalvarConfiguracoes" data-h-change="autoSalvarConfiguracoes" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Duração da Partida (minutos)</label>
+              <input type="number" id="cfg-duration" min="5" max="90" value="10" data-h-input="autoSalvarConfiguracoes" data-h-change="autoSalvarConfiguracoes" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+            </div>
+
+            <div id="cfg-stars-box" class="admin-only space-y-1.5">
+              <div class="flex items-center justify-between gap-2">
+                <label for="cfg-stars-pct" class="text-xs font-semibold text-slate-300">Peso das estrelas no sorteio</label>
+                <span id="cfg-stars-label" class="text-[11px] text-slate-400"></span>
+              </div>
+              <input type="range" id="cfg-stars-pct" min="0" max="100" step="5"data-h-input="atualizarRotuloEstrelas" data-h-change="autoSalvarConfiguracoes" class="w-full accent-neon-accent cursor-pointer">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Formato do Campeonato</label>
+              <select id="cfg-rounds" data-h-change="autoSalvarConfiguracoes" data-a='[true]' class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+                <option value="single">Turno Único (Todos contra todos uma vez)</option>
+                <option value="double">Turno e Returno (Ida e volta)</option>
+                <option value="king">Rei da Pelada (Vencedor fica, perdedor sai)</option>
+                <option value="custom">Livre (Crie as rodadas e partidas à vontade)</option>
+              </select>
+              <p id="cfg-format-hint" class="text-[11px] text-slate-500 mt-1"></p>
+            </div>
+
+            <!-- Regras específicas do formato escolhido -->
+            <div id="rules-format" class="rounded-2xl border border-borderLight bg-card/50 p-4 space-y-4">
+              <h3 class="text-xs font-bold text-neon-accent uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="list-checks" class="w-4 h-4"></i>
+                <span id="rules-format-title">Regras do Formato</span>
+              </h3>
+
+              <div id="rules-start" class="hidden">
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Quem começa jogando</label>
+                <div class="grid grid-cols-2 gap-3">
+                  <select id="cfg-first-home" data-h-change="autoSalvarConfiguracoes" aria-label="Time que começa" class="w-full bg-card border border-borderLight rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent"></select>
+                  <select id="cfg-first-away" data-h-change="autoSalvarConfiguracoes" aria-label="Adversário na abertura" class="w-full bg-card border border-borderLight rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent"></select>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-1">Define o jogo de abertura. Vale ao gerar os confrontos.</p>
+              </div>
+
+              <div id="rules-king" class="hidden space-y-4">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Em caso de empate, quem sai?</label>
+                  <select id="cfg-king-draw-rule" data-h-change="autoSalvarConfiguracoes" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+                    <option value="both">Os dois times</option>
+                    <option value="fewer_points">Quem tem menos pontos</option>
+                    <option value="fewer_goals">Quem tem menos gols</option>
+                    <option value="fewer_wins">Quem tem menos vitórias</option>
+                    <option value="more_points">Quem tem mais pontos</option>
+                    <option value="more_goals">Quem tem mais gols</option>
+                    <option value="more_wins">Quem tem mais vitórias</option>
+                  </select>
+                  <p class="text-[11px] text-slate-500 mt-1">Persistindo o empate, sai quem está há mais jogos em campo.</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-300 mb-1">Vitórias consecutivas</label>
+                  <input type="number" id="cfg-king-max-wins" min="0" max="50" value="0" data-h-input="autoSalvarConfiguracoes" data-h-change="autoSalvarConfiguracoes" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+                  <p class="text-[11px] text-slate-500 mt-1">Limite de vitórias seguidas antes de sair. 0 = nunca sai por vitórias.</p>
+                </div>
+              </div>
+
+              <p id="rules-none" class="hidden text-[11px] text-slate-500">Este formato não tem regras adicionais.</p>
+            </div>
+          </form>
+        </div>
+
+        <!-- Configurações da Conta do Usuário (preferências pessoais, salvas neste dispositivo) -->
+        <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+          <div class="border-b border-borderLight pb-4">
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+              <i data-lucide="user-cog" class="w-5 h-5 text-neon-accent"></i>
+              <span>Configurações da Conta</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Preferências pessoais, salvas neste dispositivo.</p>
+          </div>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Som do Alarme de Fim de Jogo</label>
+              <div class="flex items-center gap-2">
+                <select id="cfg-alarm-sound" data-h-change="aoMudarSomAlarme" class="flex-1 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent truncate">
+                  <option value="standard-emergency-warning-signal.mp3">🚨 Alarme de Emergência Padrão</option>
+                  <option value="samsung-alarm-morning-flower.mp3">🌸 Samsung Morning Flower</option>
+                  <option value="this-is-the-end-adele.mp3">🎵 Adele - This is the End</option>
+                  <option value="end_Mz9V9Hh.mp3">⏱️ Fim de Partida (Game Over SFX)</option>
+                  <option value="electronic-alarm-clock-buzz-sfx-sound-effect-17-audiotrimmer.mp3">⏰ Despertador Digital (Buzzer)</option>
+                  <option value="alarm-danger-danger.mp3">⚠️ Alarme Danger Danger</option>
+                  <option value="police-alarm.mp3">🚓 Sirene Policial</option>
+                  <option value="warning-alarm-loud-af.mp3">🔊 Alerta de Aviso Loud</option>
+                </select>
+                <button type="button" id="btn-preview-alarm" data-h-click="testarSomAlarme" title="Ouvir som do alarme" class="w-10 h-10 rounded-xl bg-cardLight border border-borderLight hover:border-neon-accent text-neon-accent flex items-center justify-center shrink-0 transition active:scale-95 shadow">
+                  <i id="icon-preview-alarm" data-lucide="play" class="w-4 h-4 fill-current"></i>
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-1">Toque no botão de play para testar o som do alarme.</p>
+            </div>
+
+          </div>
+        </div>
+
         <!-- Bloco de Acesso / Administração da Pelada -->
         <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
           <div class="border-b border-borderLight pb-4 flex items-center justify-between">
@@ -800,7 +920,9 @@
             <div id="pool-chain-container" class="hidden p-3 rounded-xl bg-surface border border-borderLight/60 text-xs text-slate-300 space-y-1.5">
               <div class="flex items-center justify-between text-[11px] text-slate-400 font-semibold">
                 <span>Corrente ativa de histórico:</span>
-                <button data-h-click="desvincularPool" class="admin-only text-rose-400 hover:text-rose-300 hover:underline">Desvincular</button>
+                <button type="button" data-h-click="desvincularPool" title="Remover todas as pools" aria-label="Remover todas as pools" class="admin-only w-8 h-8 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
               </div>
               <div id="pool-chain-badges" class="flex flex-wrap items-center gap-1.5 font-mono text-xs font-bold">
                 <!-- Badges gerados via JS -->
@@ -818,8 +940,8 @@
           </div>
         </div>
 
-        <!-- Backup da Pelada: exportar e importar em JSON -->
-        <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
+        <!-- Backup da Pelada: exportar e importar em JSON (somente admin) -->
+        <div class="admin-only bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
           <div class="border-b border-borderLight pb-4">
             <h2 class="text-xl font-bold text-white flex items-center gap-2">
               <i data-lucide="archive" class="w-5 h-5 text-neon-accent"></i>
@@ -852,66 +974,6 @@
             </button>
           </form>
         </div>
-
-        <!-- Parâmetros da Pelada -->
-        <div class="bg-surface border border-borderLight rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
-          <div class="border-b border-borderLight pb-4 flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <i data-lucide="sliders" class="w-5 h-5 text-neon-accent"></i>
-                <span>Regras e Parâmetros</span>
-              </h2>
-              <p class="text-xs text-slate-400 mt-1">Ajuste os parâmetros padrão para o sorteio e cálculo das partidas.</p>
-            </div>
-            <span class="text-[11px] font-semibold text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
-              <i data-lucide="check-circle" class="w-3 h-3"></i>
-              <span>Salvamento automático</span>
-            </span>
-          </div>
-
-          <form id="form-config" data-h-submit="submitConfiguracoes" data-a='["@event"]' class="space-y-4">
-            
-            <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1">Jogadores por Time na Linha / Total</label>
-              <input type="number" id="cfg-players-per-team" min="2" max="11" value="5" data-h-input="autoSalvarConfiguracoes" data-h-change="autoSalvarConfiguracoes" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1">Duração da Partida (minutos)</label>
-              <input type="number" id="cfg-duration" min="5" max="90" value="10" data-h-input="autoSalvarConfiguracoes" data-h-change="autoSalvarConfiguracoes" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1">Som do Alarme de Fim de Jogo</label>
-              <div class="flex items-center gap-2">
-                <select id="cfg-alarm-sound" data-h-change="aoMudarSomAlarme" class="flex-1 bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent truncate">
-                  <option value="standard-emergency-warning-signal.mp3">🚨 Alarme de Emergência Padrão</option>
-                  <option value="samsung-alarm-morning-flower.mp3">🌸 Samsung Morning Flower</option>
-                  <option value="this-is-the-end-adele.mp3">🎵 Adele - This is the End</option>
-                  <option value="end_Mz9V9Hh.mp3">⏱️ Fim de Partida (Game Over SFX)</option>
-                  <option value="electronic-alarm-clock-buzz-sfx-sound-effect-17-audiotrimmer.mp3">⏰ Despertador Digital (Buzzer)</option>
-                  <option value="alarm-danger-danger.mp3">⚠️ Alarme Danger Danger</option>
-                  <option value="police-alarm.mp3">🚓 Sirene Policial</option>
-                  <option value="warning-alarm-loud-af.mp3">🔊 Alerta de Aviso Loud</option>
-                </select>
-                <button type="button" id="btn-preview-alarm" data-h-click="testarSomAlarme" title="Ouvir som do alarme" class="w-10 h-10 rounded-xl bg-cardLight border border-borderLight hover:border-neon-accent text-neon-accent flex items-center justify-center shrink-0 transition active:scale-95 shadow">
-                  <i id="icon-preview-alarm" data-lucide="play" class="w-4 h-4 fill-current"></i>
-                </button>
-              </div>
-              <p class="text-[11px] text-slate-500 mt-1">Toque no botão de play para testar o som do alarme.</p>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-slate-300 mb-1">Formato do Campeonato</label>
-              <select id="cfg-rounds" data-h-change="autoSalvarConfiguracoes" data-a='[true]' class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
-                <option value="single">Turno Único (Todos contra todos uma vez)</option>
-                <option value="double">Turno e Returno (Ida e volta)</option>
-                <option value="custom">Livre (Crie as rodadas e partidas à vontade)</option>
-              </select>
-              <p class="text-[11px] text-slate-500 mt-1">No formato Livre, você monta os confrontos com os times e rodadas que quiser.</p>
-            </div>
-          </form>
-        </div>
       </div>
     </section>
         </div>
@@ -925,21 +987,50 @@
   </main>
 
   <!-- Modal para Criar Partida Livre/Personalizada -->
-  <div id="modal-custom-match" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-surface border border-borderLight rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
-      <button data-h-click="fecharModalNovaPartida" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
+  <!-- Janela única do sistema: cabeçalho, corpo, campo opcional com aviso e rodapé configuráveis -->
+  <div id="app-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div id="app-modal-box" role="dialog" aria-modal="true" class="bg-surface border border-borderLight rounded-3xl w-full max-w-md shadow-2xl relative animate-in fade-in zoom-in-95">
+      <button type="button" id="app-modal-x" class="hidden absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg" aria-label="Fechar">
         <i data-lucide="x" class="w-5 h-5"></i>
       </button>
 
-      <div class="space-y-1 border-b border-borderLight pb-3">
-        <h3 class="text-lg font-bold text-white flex items-center gap-2">
-          <i data-lucide="plus-circle" class="w-5 h-5 text-neon-accent"></i>
-          <span>Nova Partida Livre</span>
-        </h3>
-        <p class="text-xs text-slate-400">Escolha a rodada e os dois times que vão se enfrentar.</p>
+      <div id="app-modal-cabecalho" class="hidden flex items-start gap-4 px-6 pt-6 pb-3">
+        <div id="app-modal-icone-caixa" class="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"></div>
+        <div class="space-y-1 flex-1 min-w-0 pr-6">
+          <h3 id="app-modal-titulo" class="text-base font-bold text-white"></h3>
+          <div id="app-modal-mensagem" class="text-xs text-slate-300 leading-relaxed whitespace-pre-line"></div>
+        </div>
       </div>
 
-      <form id="form-custom-match" data-h-submit="salvarNovaPartidaLivre" data-a='["@event"]' class="space-y-4">
+      <div id="app-modal-corpo" class="hidden px-6 pb-5 space-y-4"></div>
+
+      <div id="app-modal-campo" class="hidden px-6 pt-4 pb-4 space-y-1.5">
+        <input type="text" id="app-modal-input" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
+      </div>
+
+      <!-- Aviso de erro: sempre logo acima da linha divisória do rodapé, com ou sem campo -->
+      <p id="app-modal-aviso" class="hidden px-6 pt-2 pb-4 text-xs font-semibold text-rose-400"></p>
+
+      <div id="app-modal-rodape" class="hidden flex items-center justify-end gap-2.5 px-6 pb-6 pt-4 border-t border-borderLight/50">
+        <button type="button" id="app-modal-cancelar" class="px-4 py-2 bg-card hover:bg-cardLight text-slate-300 hover:text-white text-xs font-semibold rounded-xl border border-borderLight transition">Cancelar</button>
+        <button type="button" id="app-modal-ok" class="px-5 py-2 text-xs font-bold rounded-xl transition shadow">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conteúdos montados dentro da janela única (IDs e ações preservados) -->
+  <template id="tpl-set-password">
+    <form id="form-set-password" data-h-submit="submeterSenhaMestra" data-a='["@event"]' class="space-y-4 pt-1">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Crie sua Senha Mestra</label>
+          <input type="password" id="input-new-pelada-password" placeholder="Mínimo 3 caracteres" required minlength="3" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
+        </div>
+
+      </form>
+  </template>
+
+  <template id="tpl-custom-match">
+      <form id="form-custom-match" data-h-submit="submeterNovaPartida" data-a='["@event"]' class="space-y-4">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Número da Rodada</label>
           <input type="number" id="custom-match-round" min="1" max="99" value="1" required class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-neon-accent">
@@ -960,86 +1051,12 @@
           </div>
         </div>
 
-        <div class="pt-2 flex justify-end gap-2 border-t border-borderLight/50">
-          <button type="button" data-h-click="fecharModalNovaPartida" class="px-4 py-2 bg-card hover:bg-cardLight text-slate-300 hover:text-white text-xs font-semibold rounded-xl border border-borderLight transition">
-            Cancelar
-          </button>
-          <button type="submit" class="glow-neon px-5 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition shadow">
-            Adicionar Partida
-          </button>
-        </div>
       </form>
-    </div>
-  </div>
+  </template>
 
-  <!-- Modal Obrigatório: Cadastro de Senha Mestra do Criador -->
-  <div id="modal-set-password" class="hidden fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-    <div class="bg-surface border border-emerald-500/40 rounded-3xl max-w-md w-full p-6 sm:p-7 space-y-5 shadow-2xl relative animate-in fade-in zoom-in-95">
-      <div class="flex items-start gap-4">
-        <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-neon-accent flex-shrink-0 text-xl">
-          <i data-lucide="lock" class="w-6 h-6"></i>
-        </div>
-        <div class="space-y-1">
-          <span class="text-[10px] font-extrabold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">Passo Obrigatório</span>
-          <h3 class="text-lg font-black text-white">Defina a Senha da Pelada</h3>
-          <p class="text-xs text-slate-300 leading-relaxed">
-            Esta senha permite que você (ou quem você autorizar) reassuma a administração desta pelada caso recarregue a página, mude de dispositivo ou perca o acesso.
-          </p>
-        </div>
-      </div>
-
-      <form id="form-set-password" data-h-submit="salvarSenhaMestraObrigatoria" data-a='["@event"]' class="space-y-4 pt-1">
-        <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Crie sua Senha Mestra</label>
-          <input type="password" id="input-new-pelada-password" placeholder="Mínimo 3 caracteres" required minlength="3" class="w-full bg-card border border-borderLight rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-neon-accent">
-        </div>
-
-        <div class="pt-2 flex justify-end">
-          <button type="submit" id="btn-save-master-password" class="w-full glow-neon py-3 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition shadow flex items-center justify-center gap-2">
-            <i data-lucide="check-circle" class="w-4 h-4"></i>
-            <span>Confirmar e Iniciar Pelada</span>
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Modal para Detalhes do Histórico ou Escalação -->
-  <div id="modal-match-details" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-surface border border-borderLight rounded-3xl max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-2xl relative">
-      <button data-h-click="closeModal" class="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg">
-        <i data-lucide="x" class="w-5 h-5"></i>
-      </button>
-
-      <div id="modal-content" class="space-y-4">
-        <!-- Preenchido dinamicamente via JS -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Personalizado para Avisos, Alertas e Confirmações (Substitui alert/confirm nativos) -->
-  <div id="custom-dialog-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-surface border border-borderLight rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl relative transform transition-all animate-in fade-in zoom-in-95">
-      <div class="flex items-start gap-4">
-        <div id="custom-dialog-icon-container" class="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0 text-xl">
-          <i id="custom-dialog-icon" data-lucide="info" class="w-6 h-6 text-neon-accent"></i>
-        </div>
-        <div class="space-y-1 flex-1">
-          <h3 id="custom-dialog-title" class="text-base font-bold text-white">Aviso</h3>
-          <p id="custom-dialog-msg" class="text-xs text-slate-300 leading-relaxed"></p>
-        </div>
-      </div>
-
-      <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-borderLight/50">
-        <button id="custom-dialog-cancel-btn" type="button" class="hidden px-4 py-2 bg-card hover:bg-cardLight text-slate-300 hover:text-white text-xs font-semibold rounded-xl border border-borderLight transition">
-          Cancelar
-        </button>
-        <button id="custom-dialog-ok-btn" type="button" class="px-5 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition shadow">
-          OK
-        </button>
-      </div>
-    </div>
-  </div>
+  <template id="tpl-match-details">
+    <div id="modal-content" class="space-y-4"></div>
+  </template>
 
   <!-- Toast Notification Container -->
   <div id="toast" class="fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-50 transform translate-y-24 opacity-0 transition-all duration-300 flex items-center gap-2 bg-emerald-500 text-black font-bold px-4 py-3 rounded-2xl shadow-xl text-xs">
@@ -1049,8 +1066,8 @@
 
   <!-- Scripts da Aplicação -->
   <script data-cfasync="false" src="/static/audit.js?v=2"></script>
-  <script data-cfasync="false" src="/static/audio.js?v=5"></script>
-  <script data-cfasync="false" src="/static/handlers.js?v=5"></script>
-  <script data-cfasync="false" src="/static/app.js?v=16"></script>
+  <script data-cfasync="false" src="/static/audio.js?v=6"></script>
+  <script data-cfasync="false" src="/static/handlers.js?v=6"></script>
+  <script data-cfasync="false" src="/static/app.js?v=24"></script>
 </body>
 </html>

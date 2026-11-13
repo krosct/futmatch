@@ -48,7 +48,7 @@
 
     #tab-viewport {
       width: 100%;
-      overflow-x: hidden;
+      overflow-x: clip;
       position: relative;
     }
 
@@ -77,6 +77,11 @@
       opacity: 0;
       pointer-events: none;
       visibility: hidden;
+    }
+
+    /* Aba ativa no hover: texto escuro sobre o pill verde (vence o hover:text-white do markup) */
+    nav .nav-tab.active:hover {
+      color: #000;
     }
 
     /* Menu inferior mobile 100% fixo com isolamento de camada e área segura */
@@ -203,11 +208,6 @@
       position: relative;
       z-index: 1;
     }
-    /* Selo de partidas pendentes sobre a aba ativa (fundo verde): mantém o número legível */
-    .nav-tab.active #badge-pending-matches {
-      background-color: rgba(0, 0, 0, 0.22);
-      color: #000;
-    }
     @keyframes peladaBannerPulse {
       0%, 100% { box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.3), 0 0 18px -6px rgba(0, 245, 155, 0.25); }
       50% { box-shadow: inset 0 0 0 1px rgba(0, 245, 155, 0.55), 0 0 34px -4px rgba(0, 245, 155, 0.45); }
@@ -223,3 +223,53 @@
     input:focus-visible + .file-trigger {
       box-shadow: 0 0 0 2px #00f59b;
     }
+
+/* Arrastar partidas (admin): cursor e dica piscante onde a movimentação preserva o formato */
+.fixture-draggable { cursor: grab; }
+.fixture-draggable:active { cursor: grabbing; }
+[data-round-block] { position: relative; border-radius: 1.5rem; }
+.fixture-hint { position: relative; }
+.fixture-hint::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(0, 245, 155, 0.22);
+  pointer-events: none;
+  z-index: 5;
+  animation: fixture-hint-pulse 1.1s ease-in-out infinite;
+}
+@keyframes fixture-hint-pulse {
+  0%, 100% { opacity: 0.06; }
+  50% { opacity: 0.45; }
+}
+.fixture-target { box-shadow: 0 0 0 2px #00f59b; }
+@media (prefers-reduced-motion: reduce) {
+  .fixture-hint::after { animation: none; opacity: 0.2; }
+}
+
+/* Efeitos de gol no cartão de partida: confetes e piscadas do placar e do lado do time */
+.goal-fx-host { isolation: isolate; }
+.goal-confetti-canvas { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0 !important; pointer-events: none; z-index: -1; }
+.goal-card-flash { position: absolute; inset: 0; margin: 0 !important; border-radius: inherit; pointer-events: none; z-index: -1; opacity: 0; animation: goal-card-pulse 0.5s ease-in-out 3; }
+.goal-card-flash-red-left { background: linear-gradient(to right, rgba(244, 63, 94, 0.22), rgba(244, 63, 94, 0) 40%); }
+.goal-card-flash-red-right { background: linear-gradient(to left, rgba(244, 63, 94, 0.22), rgba(244, 63, 94, 0) 40%); }
+.goal-card-flash-green-left { background: linear-gradient(to right, rgba(0, 245, 155, 0.2), rgba(0, 245, 155, 0) 40%); }
+.goal-card-flash-green-right { background: linear-gradient(to left, rgba(0, 245, 155, 0.2), rgba(0, 245, 155, 0) 40%); }
+.goal-score-blink-red { animation: goal-score-red 0.5s ease-in-out 3; }
+.goal-score-blink-green { animation: goal-score-green 0.5s ease-in-out 3; }
+@keyframes goal-card-pulse { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes goal-score-red { 0%, 100% { color: #ffffff; text-shadow: none; } 50% { color: #f43f5e; text-shadow: 0 0 12px rgba(244, 63, 94, 0.85); } }
+@keyframes goal-score-green { 0%, 100% { color: #ffffff; text-shadow: none; } 50% { color: #00f59b; text-shadow: 0 0 12px rgba(0, 245, 155, 0.85); } }
+
+/* Ícones de status: uma cor por tipo, usada em todo lugar (botões, cards e modais).
+   Informação = azul, sucesso = verde, aviso = amarelo. Não use cores fixas nesses ícones. */
+.icone-info { color: #38bdf8; }
+.icone-info:hover { color: #7dd3fc; }
+.icone-sucesso { color: #00f59b; }
+.icone-aviso { color: #fbbf24; }
+.caixa-info { background-color: rgba(14, 165, 233, 0.1); border: 1px solid rgba(14, 165, 233, 0.3); }
+.caixa-sucesso { background-color: rgba(0, 245, 155, 0.1); border: 1px solid rgba(0, 245, 155, 0.3); }
+.caixa-aviso { background-color: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); }
+.icone-erro { color: #ef4444; }
+.caixa-erro { background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); }
