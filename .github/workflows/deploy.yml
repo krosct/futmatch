@@ -29,6 +29,9 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Verificar CSS do Tailwind (classes usadas têm regra)
+        run: scripts/build-css.sh --check
+
       - name: Smoke test de inicialização da API
         run: python -c "import app.main; print('FutMatch backend OK')"
 
