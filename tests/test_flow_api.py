@@ -25,6 +25,9 @@ async def test_full_pelada_lifecycle(async_client):
              "home_players": [{"id": "p_1", "name": "Ana"}], "away_players": [{"id": "p_3", "name": "Carla"}],
              "events": [{"player_id": "p_1", "player_name": "Ana", "team_id": "team_1", "event_type": "goal"}]}
     assert (await lider.post(f"/api/matches/save?pelada_code={code}", json=match)).status_code == 200
+    fixture = {**match, "finished": True}
+    assert (await lider.post(f"/api/peladas/{code}/sync-state",
+                             json={"players": players, "teams": teams, "fixtures": [fixture]})).status_code == 200
 
     painel = (await lider.get(f"/api/dashboard?pelada_code={code}")).json()
     assert painel["summary"]["total_matches"] == 1

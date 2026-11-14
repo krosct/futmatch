@@ -11,7 +11,8 @@ const SoundManager = {
   settings: {
     soundVolume: 0.8,
     musicVolume: 0.5,
-    muted: typeof localStorage !== 'undefined' ? localStorage.getItem('futmatch_sound_muted') === 'true' : false
+    // Padrão: mudo. Só considera com som se o usuário já ativou explicitamente ('false' salvo).
+    muted: typeof localStorage !== 'undefined' ? localStorage.getItem('futmatch_sound_muted') !== 'false' : true
   },
 
   // Efeitos Sonoros / Músicas individuais ou listas para sorteio

@@ -5,6 +5,8 @@ from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone, timedelta
 from app.domain.models import Match, SessionConfig, PeladaSession
 from app.ports.repository import MatchRepositoryPort
+from app.domain.player_identity import resolve_alias
+from app.domain.pool_graph import pool_chain
 
 BRT = timezone(timedelta(hours=-3))
 
@@ -82,15 +84,29 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                     players TEXT DEFAULT '[]',
                     teams TEXT DEFAULT '[]',
                     fixtures TEXT DEFAULT '[]',
-                    config TEXT DEFAULT '{}',
-                    parent_code TEXT DEFAULT NULL
+                    config TEXT DEFAULT '{}'
                 )
             """)
-            # Migração caso a coluna parent_code não exista
-            try:
-                await db.execute("ALTER TABLE peladas ADD COLUMN parent_code TEXT DEFAULT NULL")
-            except Exception:
-                pass
+            # Vínculos de pool (grafo: uma pelada pode ter várias peladas anteriores)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS pelada_pool_links (
+                    child_code TEXT NOT NULL,
+                    parent_code TEXT NOT NULL,
+                    PRIMARY KEY (child_code, parent_code)
+                )
+            """)
+            # Migração: o antigo peladas.parent_code (um pai só) vira uma linha em pelada_pool_links
+            cursor = await db.execute("PRAGMA table_info(peladas)")
+            colunas = {linha[1] for linha in await cursor.fetchall()}
+            if "parent_code" in colunas:
+                await db.execute("""
+                    INSERT OR IGNORE INTO pelada_pool_links (child_code, parent_code)
+                    SELECT code, UPPER(TRIM(parent_code)) FROM peladas
+                    WHERE parent_code IS NOT NULL AND TRIM(parent_code) <> ''
+                """)
+                await db.commit()  # fecha a transação do INSERT antes do DDL (e do BEGIN das migrações seguintes)
+                await db.execute("ALTER TABLE peladas DROP COLUMN parent_code")
+                await db.commit()
             # Migração caso a coluna description não exista
             try:
                 await db.execute("ALTER TABLE peladas ADD COLUMN description TEXT DEFAULT ''")
@@ -98,6 +114,12 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 pass
 
             await self._migrate_matches_table(db)
+
+            # Cor branca saiu da paleta: times salvos com ela passam para magenta claro (idempotente)
+            await db.execute(
+                "UPDATE peladas SET teams = REPLACE(REPLACE(teams, '#e2e8f0', '#f0abfc'), '#E2E8F0', '#f0abfc') "
+                "WHERE teams LIKE '%e2e8f0%' OR teams LIKE '%E2E8F0%'"
+            )
 
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS configs (
@@ -154,13 +176,12 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             "total_rounds": 1,
             "championship_type": "single",
             "points_win": 3,
-            "points_draw": 1,
-            "alarm_sound": "standard-emergency-warning-signal.mp3"
+            "points_draw": 1
         }
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT INTO peladas (code, password_hash, created_at, name, players, teams, fixtures, config, parent_code)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                INSERT INTO peladas (code, password_hash, created_at, name, players, teams, fixtures, config)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 code.upper(),
                 password_hash,
@@ -182,7 +203,6 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             teams=[],
             fixtures=[],
             config=default_config,
-            parent_code=None,
             description=""
         )
 
@@ -204,7 +224,6 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 teams=json.loads(row["teams"]) if row["teams"] else [],
                 fixtures=json.loads(row["fixtures"]) if row["fixtures"] else [],
                 config=json.loads(row["config"]) if row["config"] else {},
-                parent_code=row["parent_code"] if "parent_code" in row.keys() and row["parent_code"] else None,
                 description=row["description"] if "description" in row.keys() and row["description"] else ""
             )
 
@@ -217,31 +236,37 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             await db.commit()
             return cursor.rowcount > 0
 
-    async def set_pelada_parent_code(self, code: str, parent_code: Optional[str]) -> bool:
-        p_code = parent_code.upper().strip() if parent_code else None
+    async def set_pelada_parent_codes(self, code: str, parent_codes: List[str]) -> None:
+        # Substitui todos os pais da pelada de forma atômica (ou grava tudo, ou nada)
+        filha = code.upper().strip()
+        pais = list(dict.fromkeys(p.upper().strip() for p in parent_codes if p and p.strip()))
         async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute(
-                "UPDATE peladas SET parent_code = ? WHERE code = ?",
-                (p_code, code.upper())
+            await db.execute("DELETE FROM pelada_pool_links WHERE child_code = ?", (filha,))
+            await db.executemany(
+                "INSERT INTO pelada_pool_links (child_code, parent_code) VALUES (?, ?)",
+                [(filha, pai) for pai in pais if pai != filha]
             )
             await db.commit()
-            return cursor.rowcount > 0
+
+    async def get_pelada_parent_codes(self, code: str) -> List[str]:
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT parent_code FROM pelada_pool_links WHERE child_code = ? ORDER BY rowid",
+                (code.upper().strip(),)
+            )
+            return [linha[0] for linha in await cursor.fetchall()]
 
     async def get_pelada_chain_codes(self, code: str) -> List[str]:
         """Percorre a corrente de peladas (pool) a partir do código atual, evitando ciclos."""
-        chain = []
-        current = code.upper().strip() if code else None
-        visited = set()
-
-        while current and current not in visited:
-            visited.add(current)
-            chain.append(current)
-            pelada = await self.get_pelada(current)
-            if not pelada or not pelada.parent_code:
-                break
-            current = pelada.parent_code.upper().strip()
-
-        return chain
+        if not code:
+            return []
+        # Carrega todos os vínculos de uma vez; o percurso do grafo deduplica nós e tolera ciclos
+        parents: Dict[str, List[str]] = {}
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT child_code, parent_code FROM pelada_pool_links ORDER BY rowid")
+            for filha, pai in await cursor.fetchall():
+                parents.setdefault(filha, []).append(pai)
+        return pool_chain(code.upper().strip(), parents)
 
     async def update_pelada_password(self, code: str, password_hash: str) -> bool:
         async with aiosqlite.connect(self.db_path) as db:
@@ -283,7 +308,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             await db.execute("""
                 UPDATE peladas
                 SET name = ?, created_at = ?, players = ?, teams = ?, fixtures = ?,
-                    config = ?, parent_code = ?, description = ?
+                    config = ?, description = ?
                 WHERE code = ?
             """, (
                 pelada.name,
@@ -292,7 +317,6 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 json.dumps(pelada.teams, ensure_ascii=False),
                 json.dumps(pelada.fixtures, ensure_ascii=False),
                 json.dumps(config.__dict__),
-                pelada.parent_code,
                 pelada.description,
                 code,
             ))
@@ -329,19 +353,25 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             return self._row_to_match(row)
 
     async def list_matches(self, pelada_code: str, limit: int = 100) -> List[Match]:
-        # Busca as partidas de todas as peladas na corrente (pool)
+        # Histórico = união das tabelas de jogos (fixtures) das peladas da corrente (pool).
+        # Uma partida só conta se ainda estiver na tabela da sua pelada: apagar do jogo remove do histórico.
         codes = await self.get_pelada_chain_codes(pelada_code)
         if not codes:
             return []
+        table_ids: Dict[str, set] = {}
+        for code in codes:
+            pelada = await self.get_pelada(code)
+            table_ids[code] = {str(f.get("id")) for f in (pelada.fixtures if pelada else []) if f.get("id") is not None}
         placeholders = ",".join("?" for _ in codes)
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                f"SELECT * FROM matches WHERE pelada_code IN ({placeholders}) ORDER BY rowid DESC LIMIT ?",
-                (*codes, limit)
+                f"SELECT * FROM matches WHERE pelada_code IN ({placeholders}) ORDER BY rowid DESC",
+                tuple(codes)
             )
             rows = await cursor.fetchall()
-            return [self._row_to_match(r) for r in rows]
+        visible = [r for r in rows if str(r["id"]) in table_ids.get(r["pelada_code"], set())]
+        return [self._row_to_match(r) for r in visible[:limit]]
 
     async def delete_all_matches(self, pelada_code: str) -> None:
         async with aiosqlite.connect(self.db_path) as db:
@@ -379,10 +409,37 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 return SessionConfig(**filtered)
             return SessionConfig()
 
+    async def get_player_aliases(self, pelada_code: str) -> Dict[str, str]:
+        """Aliases gravados por esta pelada: id do jogador nela -> id do mesmo jogador na pool."""
+        key = f"player_aliases_{pelada_code.upper().strip()}"
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT val FROM configs WHERE key = ?", (key,))
+            row = await cursor.fetchone()
+        if row and row[0]:
+            return {str(k): str(v) for k, v in json.loads(row[0]).items()}
+        return {}
+
+    async def set_player_aliases(self, pelada_code: str, aliases: Dict[str, str]) -> None:
+        key = f"player_aliases_{pelada_code.upper().strip()}"
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO configs (key, val) VALUES (?, ?)",
+                (key, json.dumps(aliases, ensure_ascii=False))
+            )
+            await db.commit()
+
+    async def get_chain_player_aliases(self, pelada_code: str) -> Dict[str, str]:
+        """Aliases de todas as peladas da corrente (ids são únicos, então podem ser unidos)."""
+        merged: Dict[str, str] = {}
+        for code in await self.get_pelada_chain_codes(pelada_code):
+            merged.update(await self.get_player_aliases(code))
+        return merged
+
     async def get_players_stats(self, pelada_code: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         """Calcula métricas detalhadas de cada jogador a partir das partidas finalizadas da pelada e do pool."""
         matches = await self.list_matches(limit=1000, pelada_code=pelada_code)
         finished_matches = [m for m in matches if m.finished]
+        aliases = await self.get_chain_player_aliases(pelada_code) if pelada_code else {}
 
         player_stats: Dict[str, Dict[str, Any]] = {}
 
@@ -401,7 +458,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
 
         for m in finished_matches:
             for p in m.home_players:
-                pid, pname = str(p.get("id")), p.get("name", "Jogador")
+                pid, pname = resolve_alias(str(p.get("id")), aliases), p.get("name", "Jogador")
                 init_player(pid, pname)
                 player_stats[pid]["matches"] += 1
                 if m.is_draw:
@@ -412,7 +469,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                     player_stats[pid]["losses"] += 1
 
             for p in m.away_players:
-                pid, pname = str(p.get("id")), p.get("name", "Jogador")
+                pid, pname = resolve_alias(str(p.get("id")), aliases), p.get("name", "Jogador")
                 init_player(pid, pname)
                 player_stats[pid]["matches"] += 1
                 if m.is_draw:
@@ -423,7 +480,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                     player_stats[pid]["losses"] += 1
 
             for ev in m.events:
-                ev_pid = str(ev.get("player_id")) if ev.get("player_id") is not None else None
+                ev_pid = resolve_alias(str(ev.get("player_id")), aliases) if ev.get("player_id") is not None else None
                 ev_pname = ev.get("player_name", "Desconhecido")
                 if ev_pid:
                     init_player(ev_pid, ev_pname)

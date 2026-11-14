@@ -6,7 +6,7 @@ A senha mestra nunca entra no documento: o hash seria um alvo para força bruta 
 from typing import Any, Dict, List, Optional
 
 BACKUP_FORMAT = "futmatch-pelada"
-BACKUP_VERSION = 1
+BACKUP_VERSION = 2  # v2: pool.parent_codes (lista); v1 trazia pool.parent_code (um pai)
 
 
 def build_backup_document(
@@ -16,8 +16,9 @@ def build_backup_document(
     created_at: str,
     description: str,
     config: Dict[str, Any],
-    parent_code: Optional[str],
+    parent_codes: List[str],
     pool_chain: List[Dict[str, Any]],
+    player_aliases: Dict[str, str],
     players: List[Dict[str, Any]],
     teams: List[Dict[str, Any]],
     fixtures: List[Dict[str, Any]],
@@ -37,8 +38,9 @@ def build_backup_document(
             "config": config,
         },
         "pool": {
-            "parent_code": parent_code,
+            "parent_codes": parent_codes,
             "chain": pool_chain,
+            "player_aliases": player_aliases,
         },
         "players": players,
         "teams": teams,

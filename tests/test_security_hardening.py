@@ -26,6 +26,11 @@ def _match(mid: str, home: str = "A", away: str = "B", hs: int = 1, aws: int = 0
     }
 
 
+async def _na_tabela(code: str, mid: str) -> None:
+    """Coloca a partida na tabela de jogos da pelada (o histórico só conta partidas da tabela)."""
+    await repo.save_pelada_state(code, [], [], [{"id": mid, "finished": True}])
+
+
 @pytest.fixture
 async def client(async_client):
     """Cliente com cookies (criado no fixture) e HTTPS; reutiliza o banco temporário isolado."""
@@ -56,6 +61,8 @@ async def test_same_match_id_in_two_peladas_does_not_overwrite(client):
         b = (await other.post("/api/peladas/create", json={"name": "Pelada B", "password": "senhaB1"})).json()["code"]
         assert (await client.post(f"/api/matches/save?pelada_code={a}", json=_match("mesmo-id", "Time A"))).status_code == 200
         assert (await other.post(f"/api/matches/save?pelada_code={b}", json=_match("mesmo-id", "Time B"))).status_code == 200
+        await _na_tabela(a, "mesmo-id")
+        await _na_tabela(b, "mesmo-id")
 
         matches_a = (await client.get(f"/api/matches?pelada_code={a}")).json()
         matches_b = (await other.get(f"/api/matches?pelada_code={b}")).json()
@@ -68,6 +75,7 @@ async def test_admin_of_one_pelada_cannot_delete_match_of_another(client):
     async with _client() as other:
         b = (await other.post("/api/peladas/create", json={"name": "Pelada B", "password": "senhaB1"})).json()["code"]
         await client.post(f"/api/matches/save?pelada_code={a}", json=_match("alvo"))
+        await _na_tabela(a, "alvo")
 
         # Admin de B tenta apagar a partida de A usando o código de A (sem cookie de A)
         res = await other.delete(f"/api/matches/alvo?pelada_code={a}")
@@ -345,6 +353,7 @@ async def test_legacy_matches_table_is_migrated_to_composite_key():
         repository = SQLiteMatchRepository(path)
         await repository.init_db()
 
+        await repository.save_pelada_state("OLDP1", [], [], [{"id": "m-old", "finished": True}])
         matches = await repository.list_matches("OLDP1")
         assert [m.id for m in matches] == ["m-old"]
 
@@ -525,7 +534,7 @@ async def test_config_has_single_source_of_truth(client):
     """Configuração sincronizada aparece em GET /api/config e nas consultas da pelada (mesma fonte)."""
     code = (await client.post("/api/peladas/create", json={"name": "Config", "password": "senha1"})).json()["code"]
     cfg = {"players_per_team": 7, "match_duration_minutes": 12, "total_rounds": 1, "championship_type": "single",
-           "points_win": 3, "points_draw": 1, "alarm_sound": "standard-emergency-warning-signal.mp3"}
+           "points_win": 3, "points_draw": 1}
     assert (await client.post(f"/api/peladas/{code}/sync-state", json={"players": [], "config": cfg})).status_code == 200
     via_config = (await client.get(f"/api/config?pelada_code={code}")).json()
     info = (await client.get(f"/api/peladas/{code}")).json()
@@ -538,7 +547,11 @@ async def test_match_timer_state_survives_sync(client):
     code = (await client.post("/api/peladas/create", json={"name": "Timer", "password": "senha1"})).json()["code"]
     fixture = {"id": "m_1", "round_number": 1, "home_team_id": "team_1", "away_team_id": "team_2",
                "timer_status": "running", "timer_elapsed_seconds": 125, "timer_updated_at": 1700000000.0}
-    assert (await client.post(f"/api/peladas/{code}/sync-state", json={"fixtures": [fixture]})).status_code == 200
+    players = [{"id": "p1", "name": "Ana"}, {"id": "p2", "name": "Bia"}]
+    teams = [{"id": "team_1", "name": "Time 1", "players": [players[0]]},
+             {"id": "team_2", "name": "Time 2", "players": [players[1]]}]
+    assert (await client.post(f"/api/peladas/{code}/sync-state",
+                              json={"players": players, "teams": teams, "fixtures": [fixture]})).status_code == 200
     info = (await client.get(f"/api/peladas/{code}")).json()
     assert info["fixtures"][0]["timer_status"] == "running"
     assert info["fixtures"][0]["timer_elapsed_seconds"] == 125

@@ -20,7 +20,11 @@ class MatchRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    async def set_pelada_parent_code(self, code: str, parent_code: Optional[str]) -> bool:
+    async def set_pelada_parent_codes(self, code: str, parent_codes: List[str]) -> None:
+        pass
+
+    @abstractmethod
+    async def get_pelada_parent_codes(self, code: str) -> List[str]:
         pass
 
     @abstractmethod
@@ -72,6 +76,18 @@ class MatchRepositoryPort(ABC):
 
     @abstractmethod
     async def get_players_stats(self, pelada_code: str) -> Dict[str, Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    async def get_player_aliases(self, pelada_code: str) -> Dict[str, str]:
+        pass
+
+    @abstractmethod
+    async def set_player_aliases(self, pelada_code: str, aliases: Dict[str, str]) -> None:
+        pass
+
+    @abstractmethod
+    async def get_chain_player_aliases(self, pelada_code: str) -> Dict[str, str]:
         pass
 
     @abstractmethod

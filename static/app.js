@@ -1,5 +1,8 @@
 // FutMatch Client Logic
 
+// Peso padrão das estrelas no sorteio (% estrelas base; o restante é histórico). Fonte única no frontend.
+const BALANCE_STARS_PCT_PADRAO = 40;
+
 let state = {
   currentPelada: null, // { code, name, created_at, has_password }
   role: 'spectator',   // 'admin' ou 'spectator'
@@ -12,7 +15,11 @@ let state = {
     total_rounds: 1,
     points_win: 3,
     points_draw: 1,
-    alarm_sound: "standard-emergency-warning-signal.mp3"
+    first_match_home_id: null,
+    first_match_away_id: null,
+    king_draw_rule: "both",
+    king_max_consecutive_wins: 0,
+    balance_stars_pct: BALANCE_STARS_PCT_PADRAO
   }
 };
 
@@ -100,7 +107,7 @@ function updateRoleUI() {
     if (isLeader) {
       el.classList.remove('hidden');
       if (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'SELECT') {
-        if (el.id !== 'btn-clear-history') {
+        if (el.id !== 'btn-clear-history' && el.id !== 'btn-export-pdf') {
           el.disabled = false;
         }
       }
@@ -117,7 +124,12 @@ function updateRoleUI() {
   const cfgFields = [
     document.getElementById("cfg-players-per-team"),
     document.getElementById("cfg-duration"),
-    document.getElementById("cfg-rounds")
+    document.getElementById("cfg-rounds"),
+    document.getElementById("cfg-first-home"),
+    document.getElementById("cfg-first-away"),
+    document.getElementById("cfg-king-draw-rule"),
+    document.getElementById("cfg-king-max-wins"),
+    document.getElementById("cfg-stars-pct")
   ];
   cfgFields.forEach(f => {
     if (f) f.disabled = !isLeader;
@@ -189,7 +201,7 @@ async function inicializarPelada() {
 
   localStorage.removeItem('futmatch_active_pelada');
       setLandingVisibility(true);
-      await showCustomAlert("A pelada com o código informado não foi encontrada.", "Código Inválido");
+      await showCustomAlert("A pelada com o código informado não foi encontrada.", "Código Inválido", false, { icone: 'circle-x' });
       return;
     }
 
@@ -268,7 +280,7 @@ async function criarNovaPelada() {
       const msg = (errData && errData.detail)
         ? (Array.isArray(errData.detail) ? errData.detail.map(d => d.msg).join(", ") : errData.detail)
         : "Falha ao gerar nova pelada. Tente novamente.";
-      await showCustomAlert(msg, "Erro");
+      await showCustomAlert(msg, "Erro", false, { icone: 'circle-x' });
       if (btn) btn.disabled = false;
       return;
     }
@@ -308,7 +320,7 @@ async function criarNovaPelada() {
 
   } catch (e) {
     console.error(e);
-    await showCustomAlert("Erro de conexão ao criar pelada.", "Erro");
+    await showCustomAlert("Erro de conexão ao criar pelada.", "Erro", false, { icone: 'circle-x' });
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -365,75 +377,72 @@ async function entrarNaPelada() {
     showToast(`Conectado à pelada #${data.code}!`);
   } catch (e) {
     console.error(e);
-    await showCustomAlert("Erro de conexão ao acessar a pelada.", "Erro");
+    await showCustomAlert("Erro de conexão ao acessar a pelada.", "Erro", false, { icone: 'circle-x' });
   } finally {
     if (btn) btn.disabled = false;
   }
 }
 
 function abrirModalDefinirSenha() {
-  const modal = document.getElementById('modal-set-password');
-  const input = document.getElementById('input-new-pelada-password');
-  if (modal) {
-    modal.classList.remove('hidden');
-    if (input) {
-      input.value = "";
-      setTimeout(() => input.focus(), 100);
+  abrirModal({
+    template: 'tpl-set-password',
+    titulo: 'Defina a Senha da Pelada',
+    mensagem: 'Passo obrigatório. Esta senha permite reassumir a administração desta pelada se você recarregar a página, trocar de dispositivo ou perder o acesso.',
+    icone: 'info',
+    tom: 'info',
+    largura: 'md',
+    cancelavel: false,
+    botoes: { ok: 'Confirmar e Iniciar Pelada' },
+    validar: validarSenhaMestra,
+    aoRenderizar: () => {
+      const input = document.getElementById('input-new-pelada-password');
+      if (input) {
+        input.value = "";
+        setTimeout(() => input.focus(), 100);
+      }
     }
-    refreshIcons();
-  }
+  });
 }
 
-async function salvarSenhaMestraObrigatoria(event) {
+function submeterSenhaMestra(event) {
   event.preventDefault();
+  confirmarModalAtual();
+}
+
+// Valida e grava a senha. Devolve o aviso (string) ou null para fechar a janela.
+async function validarSenhaMestra() {
   const input = document.getElementById('input-new-pelada-password');
-  if (!input) return;
-  const password = input.value.trim();
+  const password = input ? input.value.trim() : "";
+  if (password.length < 3) return "A senha precisa ter no mínimo 3 caracteres.";
+  if (!state.currentPelada || !state.currentPelada.code) return "Nenhuma pelada ativa no momento.";
 
-  if (password.length < 3) {
-    await showCustomAlert("A senha precisa ter no mínimo 3 caracteres.", "Senha Curta");
-    return;
-  }
-
-  if (!state.currentPelada || !state.currentPelada.code) {
-    await showCustomAlert("Nenhuma pelada ativa no momento.", "Erro");
-    return;
-  }
-
-  const btn = document.getElementById('btn-save-master-password');
-  if (btn) btn.disabled = true;
-
+  const ok = document.getElementById('app-modal-ok');
+  if (ok) ok.disabled = true;
   try {
     const res = await fetch(`/api/peladas/${state.currentPelada.code}/set-password`, {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ password })
     });
-
     if (!res.ok) {
       const err = await res.json();
-      await showCustomAlert(err.detail || "Erro ao salvar senha.", "Erro");
-      if (btn) btn.disabled = false;
-      return;
+      return err.detail || "Erro ao salvar senha.";
     }
-
-    const modal = document.getElementById('modal-set-password');
-    if (modal) modal.classList.add('hidden');
-
     if (window.auditTracker) {
-      window.auditTracker.track('set_pelada_password', 'modal-set-password', 'security', {
+      window.auditTracker.track('set_pelada_password', 'tpl-set-password', 'security', {
         code: state.currentPelada.code
       });
     }
-
     showToast("Senha mestra da pelada definida com sucesso!");
+    return null;
   } catch (e) {
     console.error(e);
-    await showCustomAlert("Erro de conexão ao cadastrar senha.", "Erro");
+    return "Erro de conexão ao cadastrar senha.";
   } finally {
-    if (btn) btn.disabled = false;
+    if (ok) ok.disabled = false;
   }
 }
+
 
 async function executarAssumirAdmin(event) {
   event.preventDefault();
@@ -448,7 +457,7 @@ async function executarAssumirAdmin(event) {
   }
 
   if (!state.currentPelada || !state.currentPelada.code) {
-    await showCustomAlert("Nenhuma pelada selecionada.", "Erro");
+    await showCustomAlert("Nenhuma pelada selecionada.", "Erro", false, { icone: 'circle-x' });
     return;
   }
 
@@ -480,12 +489,16 @@ async function executarAssumirAdmin(event) {
 
     // Sucesso ao assumir administração
     setActivePelada(state.currentPelada.code, 'admin');
+    // Redesenha as listas já com os controles de admin (sem precisar recarregar a página)
+    renderPlayersList();
+    renderTeamsGrid();
+    renderFixtures();
     input.value = "";
     showToast("Você assumiu a liderança da pelada com sucesso!");
     await showCustomAlert("Privilégios de Líder ativados com sucesso! Agora você pode gerenciar jogadores, confrontos e placares.", "Administrador Confirmado");
   } catch (e) {
     console.error(e);
-    await showCustomAlert("Erro de conexão ao validar senha.", "Erro");
+    await showCustomAlert("Erro de conexão ao validar senha.", "Erro", false, { icone: 'circle-x' });
   } finally {
     if (btn && !claimAdminCooldownTimer) btn.disabled = false;
   }
@@ -539,7 +552,9 @@ async function sairPelada() {
     "Deseja sair desta pelada e voltar para a tela inicial?",
     "Trocar de Pelada",
     "Sair da Pelada",
-    "Continuar Aqui"
+    "Continuar Aqui",
+    false,
+    { icone: 'triangle-alert' }
   );
   if (!confirmed) return;
 
@@ -646,7 +661,7 @@ function iniciarLiveEvents(peladaCode) {
         const payload = JSON.parse(e.data);
         const data = payload.data || {};
         if (state.currentPelada) {
-          state.currentPelada.parent_code = data.parent_code;
+          state.currentPelada.parent_codes = data.parent_codes;
           state.currentPelada.chain_codes = data.chain_codes;
           state.currentPelada.pool_started_at = data.pool_started_at;
         }
@@ -720,6 +735,20 @@ function encerrarLiveEvents() {
 // ==============================
 // GESTÃO DA POOL DE PELADAS (HISTÓRICO EM CORRENTE)
 // ==============================
+const NOME_JOGADOR_MAX = 60;
+const MAX_POOLS_POR_PELADA = 10; // mesmo limite do servidor (app/domain/pool_graph.py)
+let poolLink = null; // estado da janela de vínculo: { parentCodes, candidates, rows, pendingRowId }
+
+function normalizarNome(nome) {
+  return (nome || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function encontrarNaPool(nome) {
+  if (!poolLink) return [];
+  const alvo = normalizarNome(nome);
+  return poolLink.candidates.filter(c => normalizarNome(c.name) === alvo);
+}
+
 async function salvarPoolPeladas(event) {
   event.preventDefault();
   if (window.SoundManager) window.SoundManager.play('efeitos');
@@ -728,12 +757,12 @@ async function salvarPoolPeladas(event) {
   const parentCode = input.value.trim().toUpperCase();
 
   if (!parentCode || parentCode.length < 5) {
-    await showCustomAlert("Digite o código de 5 caracteres da pelada anterior a ser vinculada.", "Código Inválido");
+    await showCustomAlert("Digite o código de 5 caracteres da pelada anterior a ser vinculada.", "Código Inválido", false, { icone: 'circle-x' });
     return;
   }
 
   if (!state.currentPelada || !state.currentPelada.code) {
-    await showCustomAlert("Nenhuma pelada ativa.", "Erro");
+    await showCustomAlert("Nenhuma pelada ativa.", "Erro", false, { icone: 'circle-x' });
     return;
   }
 
@@ -742,6 +771,166 @@ async function salvarPoolPeladas(event) {
     return;
   }
 
+  const atuais = state.currentPelada.parent_codes || [];
+  if (atuais.includes(parentCode)) {
+    await showCustomAlert(`A pelada #${parentCode} já está vinculada a esta pelada.`, "Pool Já Vinculada", false, { icone: 'info' });
+    return;
+  }
+  if (atuais.length >= MAX_POOLS_POR_PELADA) {
+    await showCustomAlert(`Uma pelada pode ter no máximo ${MAX_POOLS_POR_PELADA} pools.`, "Limite de Pools", false, { icone: 'triangle-alert' });
+    return;
+  }
+  const parents = [...atuais, parentCode];
+  if (state.players.length === 0) {
+    await enviarVinculoPool(parents, [], []);
+    return;
+  }
+  await abrirVinculoPool(parents);
+}
+
+// Janela 1: cada jogador da pelada atual recebe um jogador das pools ou entra como novo
+async function abrirVinculoPool(parentCodes) {
+  const btn = document.getElementById('btn-save-pool');
+  if (btn) btn.disabled = true;
+  try {
+    const query = parentCodes.map(c => `parent_code=${encodeURIComponent(c)}`).join('&');
+    const res = await fetch(`/api/peladas/${state.currentPelada.code}/pool-candidates?${query}`, {
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      await showCustomAlert(data.detail || "Não foi possível carregar os jogadores da pool.", "Erro no Vínculo", false, { icone: 'circle-x' });
+      return;
+    }
+    poolLink = { parentCodes, candidates: data.candidates, rows: [], pendingRowId: null };
+    // Vínculos já gravados aparecem preenchidos; sem vínculo, homônimo na pool já sai selecionado
+    poolLink.rows = state.players.map(p => {
+      const gravado = data.links[p.id];
+      const casa = encontrarNaPool(p.name);
+      return { id: p.id, name: p.name, choice: gravado || (casa.length ? casa[0].id : ''), newName: null };
+    });
+
+    const resultado = await abrirModal({
+      titulo: 'Vincular pelada à pool',
+      mensagem: `Pool: ${parentCodes.map(c => `#${c}`).join(', ')}`,
+      icone: 'info',
+      tom: 'info',
+      largura: 'lg',
+      corpo: (el) => {
+        el.innerHTML = '<div id="pool-link-list" class="space-y-2 max-h-[55vh] overflow-y-auto pr-1"></div>';
+        renderPoolLinkRows();
+      },
+      botoes: { ok: 'Confirmar', cancel: 'Cancelar' },
+      validar: validarVinculoPool
+    });
+
+    if (resultado.acao !== 'ok' || !poolLink) {
+      poolLink = null;
+      return;
+    }
+    const links = poolLink.rows.filter(r => r.choice).map(r => ({ player_id: r.id, pool_player_id: r.choice }));
+    const renames = poolLink.rows.filter(r => !r.choice && r.newName).map(r => ({ player_id: r.id, name: r.newName }));
+    const parentsFinal = poolLink.parentCodes;
+    poolLink = null;
+    await enviarVinculoPool(parentsFinal, links, renames);
+  } catch (e) {
+    console.error(e);
+    await showCustomAlert("Erro de conexão ao buscar os jogadores da pool.", "Erro", false, { icone: 'circle-x' });
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// Confirmação do vínculo: jogador novo com homônimo na pool abre a renomeação antes de enviar
+async function validarVinculoPool() {
+  if (!poolLink) return null;
+  for (const row of poolLink.rows) {
+    if (!row.choice && encontrarNaPool(row.newName || row.name).length) {
+      await renomearJogadorPool(row.id);
+      return false; // volta para a janela de vínculo, que é redesenhada com a escolha
+    }
+  }
+  return null;
+}
+
+function renderPoolLinkRows() {
+  const list = document.getElementById('pool-link-list');
+  if (!list || !poolLink) return;
+  list.innerHTML = poolLink.rows.map(row => {
+    const nome = row.newName || row.name;
+    const selecionado = (id) => (row.choice === id ? 'selected' : '');
+    // Jogador da pool já escolhido em outra linha não aparece aqui (evita vincular duas vezes)
+    const escolhidosEmOutras = new Set(poolLink.rows.filter(r => r.id !== row.id && r.choice).map(r => r.choice));
+    const opcoes = `<option value="" ${row.choice ? '' : 'selected'}>Novo jogador</option>` +
+      poolLink.candidates.filter(c => !escolhidosEmOutras.has(c.id) || c.id === row.choice)
+        .map(c => `<option value="${escapeHtml(c.id)}" ${selecionado(c.id)}>${escapeHtml(c.name)} · ${escapeHtml(c.source)}</option>`).join('');
+    return `
+      <div class="flex items-center justify-between gap-3 p-2.5 bg-card/60 border border-borderLight/40 rounded-xl">
+        <div class="min-w-0 flex items-center gap-2">
+          <span class="text-sm font-semibold text-white truncate">${escapeHtml(nome)}</span>
+          ${row.newName ? '<span class="text-[10px] font-bold text-amber-400">renomeado</span>' : ''}
+        </div>
+        <select data-h-change="onPoolLinkChange" data-a="${escapeHtml(JSON.stringify([row.id]))}" aria-label="Vínculo de ${escapeHtml(nome)}" class="max-w-[55%] bg-surface border border-borderLight rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-400">${opcoes}</select>
+      </div>`;
+  }).join('');
+}
+
+async function onPoolLinkChange(rowId) {
+  const row = poolLink && poolLink.rows.find(r => r.id === rowId);
+  if (!row) return;
+  if (this.value) {
+    row.choice = this.value;
+    row.newName = null;
+    renderPoolLinkRows();
+    return;
+  }
+  // "Novo jogador" escolhido: se o nome já existe na pool, abre a renomeação
+  row.choice = '';
+  if (encontrarNaPool(row.newName || row.name).length) {
+    await renomearJogadorPool(rowId);
+  }
+  renderPoolLinkRows();
+}
+
+// Janela de renomear jogador novo (aninhada sobre a janela de vínculo)
+async function renomearJogadorPool(rowId) {
+  const row = poolLink && poolLink.rows.find(r => r.id === rowId);
+  if (!row) return;
+  const homonimo = encontrarNaPool(row.name)[0] || encontrarNaPool(row.newName || row.name)[0];
+  const resultado = await abrirModal({
+    titulo: 'Renomear jogador',
+    mensagem: `"${homonimo ? homonimo.name : (row.newName || row.name)}" já existe na pool.`,
+    icone: 'info',
+    tom: 'info',
+    largura: 'md',
+    campo: { valor: row.newName || row.name, maxlength: NOME_JOGADOR_MAX, placeholder: 'Novo nome' },
+    botoes: { ok: 'Confirmar', cancel: 'Cancelar' },
+    validar: (valor) => validarNomeNaPool(row, valor)
+  });
+  if (resultado.acao !== 'ok') return;
+  const novo = limparNomeJogador(resultado.valor);
+  row.choice = '';
+  row.newName = novo === row.name ? null : novo;
+}
+
+function limparNomeJogador(valor) {
+  return (valor || '').replace(/\s+/g, ' ').trim();
+}
+
+function validarNomeNaPool(row, valor) {
+  const novo = limparNomeJogador(valor);
+  if (!novo) return "Digite um nome para o jogador.";
+  if (novo.length > NOME_JOGADOR_MAX) return `Use no máximo ${NOME_JOGADOR_MAX} caracteres.`;
+  if (poolLink.rows.some(r => r.id !== row.id && normalizarNome(r.newName || r.name) === normalizarNome(novo))) {
+    return "Já existe um jogador com este nome nesta pelada.";
+  }
+  const casa = encontrarNaPool(novo);
+  if (casa.length) return `"${casa[0].name}" já existe na pool. Escolha outro nome.`;
+  return null;
+}
+
+async function enviarVinculoPool(parentCodes, links, renames) {
+  const input = document.getElementById('input-parent-pelada-code');
   const btn = document.getElementById('btn-save-pool');
   if (btn) btn.disabled = true;
 
@@ -749,39 +938,121 @@ async function salvarPoolPeladas(event) {
     const res = await fetch(`/api/peladas/${state.currentPelada.code}/pool`, {
       method: "POST",
       headers: getAuthHeaders(),
-      body: JSON.stringify({ parent_code: parentCode })
+      body: JSON.stringify({ parent_codes: parentCodes, links, renames })
     });
 
     const data = await res.json();
 
     if (!res.ok) {
-      await showCustomAlert(data.detail || "Erro ao vincular pelada à pool.", "Erro no Vínculo");
-      if (btn) btn.disabled = false;
+      await showCustomAlert(data.detail || "Erro ao vincular pelada à pool.", "Erro no Vínculo", false, { icone: 'circle-x' });
       return;
     }
 
-    state.currentPelada.parent_code = data.parent_code;
+    state.currentPelada.parent_codes = data.parent_codes;
     state.currentPelada.chain_codes = data.chain_codes;
     state.currentPelada.pool_started_at = data.pool_started_at;
-    input.value = "";
+    if (input) input.value = "";
 
+    if (renames.length) await recarregarEstadoPelada();
     renderPoolUI(data.chain_codes);
     await atualizarDashboard();
     showToast("Pelada vinculada com sucesso à corrente da Pool!");
   } catch (e) {
     console.error(e);
-    await showCustomAlert("Erro de conexão ao vincular peladas.", "Erro");
+    await showCustomAlert("Erro de conexão ao vincular peladas.", "Erro", false, { icone: 'circle-x' });
   } finally {
     if (btn) btn.disabled = false;
   }
 }
 
+// Busca do servidor os jogadores após renomeações feitas no vínculo
+async function recarregarEstadoPelada() {
+  const res = await fetch(`/api/peladas/${state.currentPelada.code}`, { headers: getAuthHeaders() });
+  if (!res.ok) return;
+  const d = await res.json();
+  state.players = d.players;
+  state.teams = d.teams;
+  state.fixtures = d.fixtures;
+  renderPlayersList();
+  renderTeamsGrid();
+  renderFixtures();
+}
+
+// Renomeação direta na lista de jogadores (duplo clique), como nos times
+function editarNomeJogador(playerId) {
+  const p = state.players.find(x => x.id === playerId);
+  const nomeEl = document.getElementById(`nome-jogador-${playerId}`);
+  if (!p || !nomeEl || nomeEl.querySelector('input')) return;
+
+  const linha = nomeEl.closest('[data-player-id]');
+  if (linha) linha.draggable = false;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = p.name;
+  input.maxLength = NOME_JOGADOR_MAX;
+  input.className = 'w-full bg-pitch border border-neon-accent rounded-lg px-2 py-0.5 text-sm font-semibold text-white focus:outline-none';
+  nomeEl.textContent = '';
+  nomeEl.appendChild(input);
+  input.focus();
+  input.select();
+
+  let encerrado = false;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); if (!encerrado) { encerrado = true; renomearJogador(playerId, input.value); } }
+    if (e.key === 'Escape') { e.preventDefault(); if (!encerrado) { encerrado = true; renderPlayersList(); } }
+  });
+  input.addEventListener('blur', () => {
+    if (!encerrado) { encerrado = true; renomearJogador(playerId, input.value); }
+  });
+}
+
+function renomearJogador(playerId, digitado) {
+  const p = state.players.find(x => x.id === playerId);
+  if (!p) return;
+  const novo = (digitado || '').replace(/\s+/g, ' ').trim();
+
+  if (!novo || novo === p.name) { renderPlayersList(); return; }
+  if (novo.length > NOME_JOGADOR_MAX) {
+    showToast(`Use no máximo ${NOME_JOGADOR_MAX} caracteres.`);
+    renderPlayersList();
+    return;
+  }
+  if (state.players.some(x => x.id !== playerId && normalizarNome(x.name) === normalizarNome(novo))) {
+    showToast(`Já existe um jogador chamado "${novo}".`);
+    renderPlayersList();
+    return;
+  }
+
+  p.name = novo;
+  state.teams.forEach(t => (t.players || []).forEach(q => { if (q.id === playerId) q.name = novo; }));
+  state.fixtures.forEach(f => {
+    [f.home_players, f.away_players].forEach(lista => (lista || []).forEach(q => { if (q.id === playerId) q.name = novo; }));
+    (f.events || []).forEach(ev => { if (ev.player_id === playerId) ev.player_name = novo; });
+  });
+  renderPlayersList();
+  renderTeamsGrid();
+  renderFixtures();
+  sincronizarEstadoServidor();
+}
+
+// Estado da corrente vindo do servidor (depois de vincular, remover uma pool ou todas)
+function aplicarEstadoPool(data) {
+  if (!state.currentPelada) return;
+  state.currentPelada.parent_codes = data.parent_codes || [];
+  state.currentPelada.chain_codes = data.chain_codes || [state.currentPelada.code];
+  state.currentPelada.pool_started_at = data.pool_started_at;
+  renderPoolUI(state.currentPelada.chain_codes);
+}
+
 async function desvincularPool() {
   const confirmed = await showCustomConfirm(
-    "Deseja desvincular esta pelada da corrente anterior? O histórico voltará a considerar apenas esta pelada individual.",
-    "Desvincular Pool",
-    "Desvincular",
-    "Cancelar"
+    "Deseja remover todas as pools desta pelada? Os vínculos de jogadores serão desfeitos e o histórico voltará a considerar apenas esta pelada.",
+    "Remover Todas as Pools",
+    "Remover todas",
+    "Cancelar",
+    false,
+    { icone: 'triangle-alert' }
   );
   if (!confirmed) return;
 
@@ -789,20 +1060,46 @@ async function desvincularPool() {
     const res = await fetch(`/api/peladas/${state.currentPelada.code}/pool`, {
       method: "POST",
       headers: getAuthHeaders(),
-      body: JSON.stringify({ parent_code: null })
+      body: JSON.stringify({ parent_codes: [] })
     });
-
     const data = await res.json();
     if (res.ok) {
-      state.currentPelada.parent_code = null;
-      state.currentPelada.chain_codes = data.chain_codes || [state.currentPelada.code];
-      state.currentPelada.pool_started_at = data.pool_started_at;
-      renderPoolUI(state.currentPelada.chain_codes);
+      aplicarEstadoPool(data);
       await atualizarDashboard();
-      showToast("Pelada desvinculada da pool!");
+      showToast("Pools removidas desta pelada!");
     }
   } catch (e) {
     console.error(e);
+  }
+}
+
+async function removerPool(parentCode) {
+  const confirmed = await showCustomConfirm(
+    `Remover a pool #${parentCode} desta pelada? Os vínculos de jogadores com ela serão desfeitos. As outras pools continuam.`,
+    "Remover Pool",
+    "Remover",
+    "Cancelar",
+    false,
+    { icone: 'triangle-alert' }
+  );
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(`/api/peladas/${state.currentPelada.code}/pool/${encodeURIComponent(parentCode)}`, {
+      method: "DELETE",
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      await showCustomAlert(data.detail || "Não foi possível remover a pool.", "Erro no Vínculo", false, { icone: 'circle-x' });
+      return;
+    }
+    aplicarEstadoPool(data);
+    await atualizarDashboard();
+    showToast(`Pool #${parentCode} removida desta pelada!`);
+  } catch (e) {
+    console.error(e);
+    await showCustomAlert("Erro de conexão ao remover a pool.", "Erro", false, { icone: 'circle-x' });
   }
 }
 
@@ -812,7 +1109,7 @@ async function desvincularPool() {
 async function exportarPelada() {
   if (window.SoundManager) window.SoundManager.play('efeitos');
   if (!state.currentPelada || !state.currentPelada.code) {
-    await showCustomAlert("Nenhuma pelada ativa.", "Erro");
+    await showCustomAlert("Nenhuma pelada ativa.", "Erro", false, { icone: 'circle-x' });
     return;
   }
 
@@ -824,7 +1121,7 @@ async function exportarPelada() {
     const res = await fetch(`/api/peladas/${code}/export`);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      await showCustomAlert(data.detail || "Erro ao exportar a pelada.", "Erro");
+      await showCustomAlert(data.detail || "Erro ao exportar a pelada.", "Erro", false, { icone: 'circle-x' });
       return;
     }
 
@@ -840,7 +1137,7 @@ async function exportarPelada() {
     showToast("Pelada exportada!");
   } catch (e) {
     console.error(e);
-    await showCustomAlert("Erro de conexão ao exportar a pelada.", "Erro");
+    await showCustomAlert("Erro de conexão ao exportar a pelada.", "Erro", false, { icone: 'circle-x' });
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -860,13 +1157,13 @@ async function importarPelada(event) {
   event.preventDefault();
   if (window.SoundManager) window.SoundManager.play('efeitos');
   if (!state.currentPelada || !state.currentPelada.code) {
-    await showCustomAlert("Nenhuma pelada ativa.", "Erro");
+    await showCustomAlert("Nenhuma pelada ativa.", "Erro", false, { icone: 'circle-x' });
     return;
   }
   const fileInput = document.getElementById('input-import-file');
   const file = fileInput && fileInput.files ? fileInput.files[0] : null;
   if (!file) {
-    await showCustomAlert("Escolha o arquivo JSON exportado.", "Arquivo Obrigatório");
+    await showCustomAlert("Escolha o arquivo JSON exportado.", "Arquivo Obrigatório", false, { icone: 'circle-x' });
     return;
   }
 
@@ -902,7 +1199,7 @@ async function importarPelada(event) {
       const msg = Array.isArray(data.detail)
         ? data.detail.map(d => d.msg).join(", ")
         : (data.detail || "Não foi possível importar a pelada.");
-      await showCustomAlert(msg, "Erro na Importação");
+      await showCustomAlert(msg, "Erro na Importação", false, { icone: 'circle-x' });
       return;
     }
 
@@ -915,7 +1212,7 @@ async function importarPelada(event) {
     window.location.reload();
   } catch (e) {
     console.error(e);
-    await showCustomAlert("Erro de conexão ao importar a pelada.", "Erro");
+    await showCustomAlert("Erro de conexão ao importar a pelada.", "Erro", false, { icone: 'circle-x' });
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -945,11 +1242,17 @@ function renderPoolUI(chainCodes) {
   if (chainContainer && chainBadges) {
     if (count > 1) {
       chainContainer.classList.remove('hidden');
+      // X só nas pools diretas desta pelada (as indiretas somem quando a pool que as traz sai)
+      const diretas = (state.currentPelada && state.currentPelada.parent_codes) || [];
+      const ehAdmin = state.role === 'admin';
       chainBadges.innerHTML = codes.map((c, idx) => `
         <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg ${idx === 0 ? 'bg-purple-600 text-white shadow' : 'bg-card border border-borderLight text-slate-300'}">
-          ${idx === 0 ? '⭐ Atual:' : `🔗 #${idx}:`} #${escapeHtml(c)}
+          ${idx === 0 ? '⭐ Atual:' : '🔗'} #${escapeHtml(c)}
+          ${ehAdmin && idx > 0 && diretas.includes(c) ? `
+            <button type="button" data-h-click="removerPool" data-a="${escapeHtml(JSON.stringify([c]))}" title="Remover pool #${escapeHtml(c)}" aria-label="Remover pool #${escapeHtml(c)}" class="w-4 h-4 rounded-full bg-rose-500/20 hover:bg-rose-500 text-rose-400 hover:text-white flex items-center justify-center transition active:scale-95 ml-0.5">
+              <i data-lucide="x" class="w-3 h-3 stroke-[2.5]"></i>
+            </button>` : ''}
         </span>
-        ${idx < codes.length - 1 ? '<i data-lucide="arrow-right" class="w-3.5 h-3.5 text-slate-500"></i>' : ''}
       `).join("");
     } else {
       chainContainer.classList.add('hidden');
@@ -979,6 +1282,15 @@ function renderPoolUI(chainCodes) {
 }
 
 // Sincroniza o estado atual (jogadores, times, confrontos) com o servidor SQLite
+// Times só têm jogadores da lista e partidas só usam times existentes
+function sanearEstadoLocal() {
+  const ids = new Set((state.players || []).map(p => p.id));
+  (state.teams || []).forEach(t => { t.players = (t.players || []).filter(p => ids.has(p.id)); });
+  const teamIds = new Set((state.teams || []).map(t => t.id));
+  state.fixtures = (state.fixtures || []).filter(f =>
+    (!f.home_team_id || teamIds.has(f.home_team_id)) && (!f.away_team_id || teamIds.has(f.away_team_id)));
+}
+
 function sincronizarEstadoServidor(immediate = false) {
   if (!state.currentPelada || !state.currentPelada.code) return;
   if (state.role !== 'admin') return;
@@ -987,7 +1299,8 @@ function sincronizarEstadoServidor(immediate = false) {
 
   const executarSync = async () => {
     try {
-      await fetch(`/api/peladas/${state.currentPelada.code}/sync-state`, {
+      sanearEstadoLocal();
+      const res = await fetch(`/api/peladas/${state.currentPelada.code}/sync-state`, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -997,6 +1310,11 @@ function sincronizarEstadoServidor(immediate = false) {
           config: state.config
         })
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("Sincronização recusada:", err.detail || res.status);
+        if (err.detail) showToast(String(err.detail));
+      }
     } catch (e) {
       console.error("Erro ao sincronizar estado com o servidor:", e);
     }
@@ -1046,6 +1364,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateTabPanesVisibility(0);
   switchTab('matchmaker');
   atualizarBotaoSomUI();
+  const elStarsBoot = document.getElementById("cfg-stars-pct");
+  if (elStarsBoot) {
+    elStarsBoot.value = BALANCE_STARS_PCT_PADRAO;
+    atualizarRotuloEstrelas(elStarsBoot);
+  }
   await inicializarPelada();
   atualizarIndicadorNav();
   refreshIcons();
@@ -1227,122 +1550,218 @@ function showToast(msg) {
   }, 2500);
 }
 
-// Sistema de Janela de Diálogo Personalizada (Substitui window.alert e window.confirm)
-function showCustomAlert(message, title = "Aviso", allowHtml = false) {
+// ===== Janela modal única do sistema =====
+// Pilha de janelas: só a do topo aparece. abrirModal() devolve Promise<{acao:'ok'|'cancel', valor}>.
+// Opções: titulo, mensagem (mensagemHtml), icone, tom ('info'|'alerta'|'perigo'), largura ('md'|'lg'|'xl'),
+// template (id de <template> com o conteúdo), corpo (function(elemento)), campo {valor, maxlength, placeholder},
+// botoes {ok, cancel} (sem botoes = sem rodapé), cancelavel (padrão true), validar(valor) -> null | texto de aviso | false,
+// aoRenderizar() (roda a cada desenho, para preencher conteúdo de template).
+const APP_MODAL = { pilha: [] };
+// Modelo de cor dos modais: cada tom tem a cor do ícone (icone), a caixa do ícone (caixa)
+// e a cor do botão principal (botao), que é SEMPRE a mesma cor do ícone.
+const TONS_MODAL = {
+  info: { caixa: 'caixa-info', icone: 'icone-info', botao: 'bg-sky-400 hover:bg-sky-300 text-black shadow' },
+  sucesso: { caixa: 'caixa-sucesso', icone: 'icone-sucesso', botao: 'bg-neon-accent hover:bg-emerald-400 text-black shadow' },
+  aviso: { caixa: 'caixa-aviso', icone: 'icone-aviso', botao: 'bg-amber-400 hover:bg-amber-300 text-black shadow' },
+  erro: { caixa: 'caixa-erro', icone: 'icone-erro', botao: 'bg-red-500 hover:bg-red-600 text-white shadow' }
+};
+// Ícone do cabeçalho escolhe o tom (ícone de informação = info, + = sucesso, ! = aviso, X = erro)
+const ICONES_STATUS = {
+  'info': 'info',
+  'plus-circle': 'sucesso',
+  'triangle-alert': 'aviso',
+  'circle-x': 'erro'
+};
+// Tons antigos (sem ícone de status) continuam funcionando
+const TOM_LEGADO = { info: 'info', alerta: 'aviso', perigo: 'aviso' };
+const LARGURAS_MODAL = { md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl', '2xl': 'max-w-2xl' };
+
+function topoModal() {
+  return APP_MODAL.pilha[APP_MODAL.pilha.length - 1] || null;
+}
+
+function renderizarModalAtual() {
+  const raiz = document.getElementById('app-modal');
+  if (!raiz) return;
+  const topo = topoModal();
+  if (!topo) {
+    raiz.classList.add('hidden');
+    document.getElementById('app-modal-corpo').innerHTML = '';
+    return;
+  }
+  const o = topo.opts;
+  const tom = TONS_MODAL[ICONES_STATUS[o.icone || 'info'] || TOM_LEGADO[o.tom]] || TONS_MODAL.info;
+
+  document.getElementById('app-modal-box').className =
+    `bg-surface border border-borderLight rounded-3xl w-full ${LARGURAS_MODAL[o.largura] || 'max-w-md'} shadow-2xl relative animate-in fade-in zoom-in-95`;
+
+  // Cabeçalho: só aparece quando há título ou mensagem (templates trazem o próprio)
+  const cabecalho = document.getElementById('app-modal-cabecalho');
+  const temCabecalho = !!(o.titulo || o.mensagem);
+  cabecalho.classList.toggle('hidden', !temCabecalho);
+  if (temCabecalho) {
+    document.getElementById('app-modal-titulo').textContent = o.titulo || '';
+    const msg = document.getElementById('app-modal-mensagem');
+    if (o.mensagemHtml) msg.innerHTML = o.mensagem || ''; else msg.textContent = o.mensagem || '';
+    msg.classList.toggle('hidden', !o.mensagem);
+    const caixa = document.getElementById('app-modal-icone-caixa');
+    const iconeNome = o.icone || 'info';
+    caixa.className = `w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${tom.caixa}`;
+    caixa.innerHTML = `<i data-lucide="${iconeNome}" class="w-6 h-6 ${tom.icone}"></i>`;
+  }
+
+  // Corpo: template clonado ou função que desenha o conteúdo
+  const corpo = document.getElementById('app-modal-corpo');
+  corpo.innerHTML = '';
+  if (o.template) {
+    const tpl = document.getElementById(o.template);
+    if (tpl) corpo.appendChild(tpl.content.cloneNode(true));
+  } else if (typeof o.corpo === 'function') {
+    o.corpo(corpo);
+  }
+  corpo.classList.toggle('hidden', !corpo.childNodes.length);
+  // Sem cabeçalho, o corpo precisa do próprio espaço no topo
+  corpo.classList.toggle('pt-6', !temCabecalho);
+
+  // Campo de texto opcional
+  const campo = document.getElementById('app-modal-campo');
+  const input = document.getElementById('app-modal-input');
+  campo.classList.toggle('hidden', !o.campo);
+  limparAvisoModal();
+  if (o.campo) {
+    input.value = o.campo.valor || '';
+    if (o.campo.maxlength) input.maxLength = o.campo.maxlength; else input.removeAttribute('maxlength');
+    input.placeholder = o.campo.placeholder || '';
+  }
+
+  // Rodapé: só quando há botões
+  const rodape = document.getElementById('app-modal-rodape');
+  rodape.classList.toggle('hidden', !o.botoes);
+  if (o.botoes) {
+    const ok = document.getElementById('app-modal-ok');
+    ok.textContent = o.botoes.ok || 'OK';
+    ok.className = `px-5 py-2 text-xs font-bold rounded-xl transition ${tom.botao}`;
+    ok._base = ok.className;
+    const cancelar = document.getElementById('app-modal-cancelar');
+    cancelar.textContent = o.botoes.cancel || 'Cancelar';
+    cancelar.classList.toggle('hidden', !o.botoes.cancel);
+  }
+
+  document.getElementById('app-modal-x').classList.toggle('hidden', o.cancelavel === false);
+  raiz.classList.remove('hidden');
+  refreshIcons();
+  if (o.campo) { input.focus(); input.select(); }
+  if (typeof o.aoRenderizar === 'function') o.aoRenderizar();
+}
+
+function abrirModal(opts = {}) {
   return new Promise((resolve) => {
-    const modal = document.getElementById("custom-dialog-modal");
-    const titleEl = document.getElementById("custom-dialog-title");
-    const msgEl = document.getElementById("custom-dialog-msg");
-    const okBtn = document.getElementById("custom-dialog-ok-btn");
-    const cancelBtn = document.getElementById("custom-dialog-cancel-btn");
-    const iconContainer = document.getElementById("custom-dialog-icon-container");
-
-    if (!modal) {
-      resolve();
-      return;
+    // Mesmo template aberto de novo substitui a janela anterior dele
+    const topo = topoModal();
+    if (opts.template && topo && topo.opts.template === opts.template) {
+      APP_MODAL.pilha.pop();
+      topo.resolve({ acao: 'cancel', valor: null });
     }
-
-    titleEl.textContent = title;
-    // HTML só quando o chamador garante que os dados já foram escapados (allowHtml)
-    if (allowHtml) {
-      msgEl.innerHTML = message;
-    } else {
-      msgEl.textContent = message;
-    }
-    cancelBtn.classList.add("hidden");
-    okBtn.textContent = "Entendido";
-    okBtn.className = "px-5 py-2 bg-neon-accent hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition shadow";
-    iconContainer.className = "w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0 text-xl text-neon-accent";
-
-    const handleKeydown = (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        handleOk();
-      }
-    };
-
-    const handleOk = () => {
-      cleanup();
-      resolve();
-    };
-
-    const cleanup = () => {
-      modal.classList.add("hidden");
-      okBtn.removeEventListener("click", handleOk);
-      window.removeEventListener("keydown", handleKeydown, true);
-    };
-
-    okBtn.addEventListener("click", handleOk, { once: true });
-    window.addEventListener("keydown", handleKeydown, true);
-    modal.classList.remove("hidden");
-    okBtn.focus();
-    refreshIcons();
+    APP_MODAL.pilha.push({ opts, resolve, valor: null });
+    renderizarModalAtual();
   });
 }
 
-function showCustomConfirm(message, title = "Confirmação", confirmText = "Confirmar", cancelText = "Cancelar", allowHtml = false) {
-  return new Promise((resolve) => {
-    const modal = document.getElementById("custom-dialog-modal");
-    const titleEl = document.getElementById("custom-dialog-title");
-    const msgEl = document.getElementById("custom-dialog-msg");
-    const okBtn = document.getElementById("custom-dialog-ok-btn");
-    const cancelBtn = document.getElementById("custom-dialog-cancel-btn");
-    const iconContainer = document.getElementById("custom-dialog-icon-container");
+function fecharModal(acao = 'cancel') {
+  const topo = APP_MODAL.pilha.pop();
+  if (!topo) return;
+  topo.resolve({ acao, valor: topo.valor });
+  renderizarModalAtual();
+}
 
-    if (!modal) {
-      resolve(false);
+// Fecha só se a janela do topo for a do template informado (evita fechar outra por engano)
+function fecharModalDoTemplate(template) {
+  const topo = topoModal();
+  if (topo && topo.opts.template === template) fecharModal('ok');
+}
+
+function limparAvisoModal() {
+  const aviso = document.getElementById('app-modal-aviso');
+  if (aviso) { aviso.textContent = ''; aviso.classList.add('hidden'); }
+}
+
+// Resposta inválida: aviso abaixo do campo e botão vermelho que treme por 1s
+function avisarModal(mensagem) {
+  const aviso = document.getElementById('app-modal-aviso');
+  if (aviso) { aviso.textContent = mensagem; aviso.classList.remove('hidden'); }
+  const ok = document.getElementById('app-modal-ok');
+  if (!ok || ok.classList.length === 0) return;
+  clearTimeout(ok._piscaTimer);
+  ok.className = 'px-5 py-2 text-xs font-bold rounded-xl transition shadow bg-rose-500 text-white';
+  ok._piscaTimer = setTimeout(() => { ok.className = ok._base; }, 1000);
+  ok.animate([
+    { transform: 'translateX(0)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' },
+    { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }
+  ], { duration: 400 });
+}
+
+async function confirmarModalAtual() {
+  const topo = topoModal();
+  if (!topo) return;
+  const o = topo.opts;
+  const valor = o.campo ? document.getElementById('app-modal-input').value : null;
+  topo.valor = valor;
+  if (typeof o.validar === 'function') {
+    const resposta = await o.validar(valor);
+    // Durante a validação outra janela pode ter sido aberta/fechada
+    if (topoModal() !== topo) return;
+    if (resposta === false) { renderizarModalAtual(); return; }
+    if (typeof resposta === 'string') { avisarModal(resposta); return; }
+  }
+  fecharModal('ok');
+}
+
+(function ligarModalUnico() {
+  const raiz = document.getElementById('app-modal');
+  if (!raiz) return;
+  document.getElementById('app-modal-ok').addEventListener('click', confirmarModalAtual);
+  document.getElementById('app-modal-cancelar').addEventListener('click', () => fecharModal('cancel'));
+  document.getElementById('app-modal-x').addEventListener('click', () => fecharModal('cancel'));
+  document.getElementById('app-modal-input').addEventListener('input', limparAvisoModal);
+  document.addEventListener('keydown', (e) => {
+    const topo = topoModal();
+    if (!topo || e.defaultPrevented) return;
+    const o = topo.opts;
+    if (e.key === 'Escape') {
+      if (o.cancelavel === false) return;
+      e.preventDefault();
+      // Diálogo sem cancelar (só OK) é dispensado como OK
+      fecharModal(o.botoes && o.botoes.cancel ? 'cancel' : 'ok');
       return;
     }
-
-    titleEl.textContent = title;
-    if (allowHtml) {
-      msgEl.innerHTML = message;
-    } else {
-      msgEl.textContent = message;
-    }
-    cancelBtn.textContent = cancelText;
-    cancelBtn.classList.remove("hidden");
-    okBtn.textContent = confirmText;
-    okBtn.className = "px-5 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-xl transition shadow";
-    iconContainer.className = "w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0 text-xl text-amber-400";
-
-    const handleKeydown = (e) => {
-      if (e.key === "Enter") {
+    if (e.key === 'Enter') {
+      if (o.campo && e.target === document.getElementById('app-modal-input')) {
         e.preventDefault();
-        e.stopPropagation();
-        handleOk();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        handleCancel();
+        confirmarModalAtual();
+        return;
       }
-    };
-
-    const handleOk = () => {
-      cleanup();
-      resolve(true);
-    };
-
-    const handleCancel = () => {
-      cleanup();
-      resolve(false);
-    };
-
-    const cleanup = () => {
-      modal.classList.add("hidden");
-      okBtn.removeEventListener("click", handleOk);
-      cancelBtn.removeEventListener("click", handleCancel);
-      window.removeEventListener("keydown", handleKeydown, true);
-    };
-
-    okBtn.addEventListener("click", handleOk, { once: true });
-    cancelBtn.addEventListener("click", handleCancel, { once: true });
-    window.addEventListener("keydown", handleKeydown, true);
-    modal.classList.remove("hidden");
-    okBtn.focus();
-    refreshIcons();
+      // Mensagens simples: Enter confirma (formulários e templates tratam o próprio Enter)
+      if (!o.campo && !o.template && typeof o.corpo !== 'function' && o.botoes) {
+        e.preventDefault();
+        confirmarModalAtual();
+      }
+    }
   });
+})();
+
+// opcoes.icone: ícone de status ('info' | 'plus-circle' | 'triangle-alert' | 'circle-x'); padrão 'info'
+function showCustomAlert(message, title = "Aviso", allowHtml = false, opcoes = {}) {
+  return abrirModal({
+    titulo: title, mensagem: message, mensagemHtml: allowHtml, icone: opcoes.icone || 'info', tom: 'info',
+    botoes: { ok: 'Entendido' }
+  }).then(() => undefined);
+}
+
+function showCustomConfirm(message, title = "Confirmação", confirmText = "Confirmar", cancelText = "Cancelar", allowHtml = false, opcoes = {}) {
+  return abrirModal({
+    titulo: title, mensagem: message, mensagemHtml: allowHtml, icone: opcoes.icone || 'info', tom: 'info',
+    botoes: { ok: confirmText, cancel: cancelText }
+  }).then((r) => r.acao === 'ok');
 }
 
 // ==============================
@@ -1359,7 +1778,7 @@ function addSinglePlayer() {
   const normalizedName = name.toLowerCase();
   const alreadyExists = state.players.some(p => p.name.trim().toLowerCase() === normalizedName);
   if (alreadyExists) {
-    showCustomAlert(`Já existe um jogador cadastrado com o nome "${name}".`, "Jogador Duplicado");
+    showCustomAlert(`Já existe um jogador cadastrado com o nome "${name}".`, "Jogador Duplicado", false, { icone: 'circle-x' });
     return;
   }
 
@@ -1400,7 +1819,10 @@ async function clearPlayers() {
   const confirmed = await showCustomConfirm(
     "Deseja realmente limpar toda a lista de jogadores cadastrados?",
     "Limpar Jogadores",
-    "Limpar Lista"
+    "Limpar Lista",
+    "Cancelar",
+    false,
+    { icone: 'triangle-alert' }
   );
   if (confirmed) {
     state.players = [];
@@ -1471,7 +1893,7 @@ function renderPlayersList() {
             }
           </span>
         `}
-        <span class="text-sm font-semibold text-white truncate">${escapeHtml(p.name)}</span>
+        <span id="nome-jogador-${p.id}" ${isLeader ? `data-h-dblclick="editarNomeJogador" data-a="${escapeHtml(JSON.stringify([p.id]))}" title="Clique duas vezes para renomear" class="text-sm font-semibold text-white truncate cursor-text"` : 'class="text-sm font-semibold text-white truncate"'}>${escapeHtml(p.name)}</span>
         ${isLeader ? `
           <button type="button" data-h-click="cyclePlayerLevel" data-a="${escapeHtml(JSON.stringify([p.id]))}" title="Clique para alterar nível (1 a 5 estrelas)" class="focus:outline-none hover:scale-105 active:scale-95 transition-transform cursor-pointer flex items-center px-1 py-0.5 rounded hover:bg-slate-800/60">
             <span class="text-amber-400 text-xs tracking-tighter select-none">${"★".repeat(p.level)}${"☆".repeat(5 - p.level)}</span>
@@ -1675,7 +2097,7 @@ async function sortearTimes() {
     return true;
   } catch (err) {
     console.error(err);
-    await showCustomAlert("Ocorreu um erro ao realizar o sorteio dos times.", "Erro no Sorteio");
+    await showCustomAlert("Ocorreu um erro ao realizar o sorteio dos times.", "Erro no Sorteio", false, { icone: 'circle-x' });
     return false;
   }
 }
@@ -1787,6 +2209,7 @@ async function salvarDescricaoPelada(valorDigitado) {
 }
 
 function renderTeamsGrid() {
+  atualizarRegrasFormato();
   const container = document.getElementById("teams-grid");
   const lastCombEl = document.getElementById("last-combination-info");
 
@@ -1954,6 +2377,134 @@ function onCardDrop(event, teamId) {
 }
 
 // ==============================
+// ARRASTAR PARTIDAS (ADMIN)
+// ==============================
+// Soltar sobre outra partida TROCA as duas de rodada; soltar sobre uma rodada MOVE a partida para ela.
+// A dica piscante mostra onde a partida preserva o formato (vem do servidor; formato livre não tem dica).
+let tokenAlvosPartida = 0;
+
+function alvoPartidaSob(elemento, idArrastado) {
+  const card = elemento?.closest('[data-match-id]');
+  if (card && card.dataset.matchId !== idArrastado) return card;
+  const bloco = elemento?.closest('[data-round-block]');
+  return bloco || null;
+}
+
+async function mostrarAlvosPartida(matchId) {
+  if (state.config.championship_type === 'custom') return;
+  const token = ++tokenAlvosPartida;
+  try {
+    const res = await fetch('/api/championship/drop-targets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payloadFormato(), moved_id: matchId })
+    });
+    if (!res.ok) return;
+    const alvos = await res.json();
+    if (token !== tokenAlvosPartida || dragState?.id !== matchId) return;
+    alvos.cards.forEach(id => document.getElementById(`match-card-${id}`)?.classList.add('fixture-hint'));
+    alvos.rounds.forEach(r => document.querySelector(`[data-round-block="${r}"]`)?.classList.add('fixture-hint'));
+  } catch (e) {
+    console.error('Erro ao calcular a dica de arraste:', e);
+  }
+}
+
+function limparAlvosPartida() {
+  tokenAlvosPartida++;
+  document.querySelectorAll('.fixture-hint, .fixture-target').forEach(el => el.classList.remove('fixture-hint', 'fixture-target'));
+}
+
+function encerrarArrastePartida() {
+  dragState = null;
+  limparAlvosPartida();
+  document.querySelectorAll('[data-match-id].opacity-40').forEach(el => el.classList.remove('opacity-40'));
+}
+
+function onFixtureDragStart(event, matchId) {
+  if (state.role !== 'admin') { event.preventDefault(); return; }
+  dragState = { kind: 'fixture', id: matchId };
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', matchId);
+  const card = this;
+  setTimeout(() => card.classList.add('opacity-40'), 0); // depois do snapshot do arrasto
+  mostrarAlvosPartida(matchId);
+}
+
+function onFixtureDragEnd() {
+  encerrarArrastePartida();
+}
+
+function onFixtureDragOver(event, matchId) {
+  if (dragState?.kind !== 'fixture') return;
+  event.stopPropagation(); // o card tem prioridade sobre o bloco da rodada
+  if (matchId === dragState.id) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  this.classList.add('fixture-target');
+}
+
+function onFixtureDragLeave(event) {
+  if (this.contains(event.relatedTarget)) return;
+  this.classList.remove('fixture-target');
+}
+
+function onFixtureDrop(event, matchId) {
+  if (dragState?.kind !== 'fixture') return;
+  event.preventDefault();
+  event.stopPropagation();
+  const origem = dragState.id;
+  encerrarArrastePartida();
+  if (origem !== matchId) trocarRodadasPartidas(origem, matchId);
+}
+
+function onRoundDragOver(event) {
+  if (dragState?.kind !== 'fixture') return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  this.classList.add('fixture-target');
+}
+
+function onRoundDrop(event, rodada) {
+  if (dragState?.kind !== 'fixture') return;
+  event.preventDefault();
+  const origem = dragState.id;
+  encerrarArrastePartida();
+  moverPartidaParaRodada(origem, Number(rodada));
+}
+
+function trocarRodadasPartidas(idA, idB) {
+  const i = state.fixtures.findIndex(m => m.id === idA);
+  const j = state.fixtures.findIndex(m => m.id === idB);
+  if (i < 0 || j < 0 || i === j) return;
+  // Troca as posições na lista (o que o usuário vê) e as rodadas: a lista continua ordenada por rodada
+  const a = state.fixtures[i];
+  const b = state.fixtures[j];
+  state.fixtures[i] = b;
+  state.fixtures[j] = a;
+  [a.round_number, b.round_number] = [b.round_number, a.round_number];
+  aplicarMovimentoPartida();
+}
+
+function moverPartidaParaRodada(idPartida, rodada) {
+  const m = state.fixtures.find(f => f.id === idPartida);
+  if (!m || m.round_number === rodada) return;
+  m.round_number = rodada;
+  aplicarMovimentoPartida();
+}
+
+function aplicarMovimentoPartida() {
+  state.fixtures.sort((a, b) => (a.round_number || 0) - (b.round_number || 0)); // estável: mantém a ordem dentro da rodada
+  renderFixtures(); // recalcula o [MOD]
+  sincronizarEstadoServidor();
+}
+
+// Alvo do arrasto de times/jogadores (toque)
+function alvoTimeSob(elemento, a) {
+  const card = elemento?.closest('[data-team-card]') || null;
+  return card && !(a.kind === 'team' && card.dataset.teamId === a.id) ? card : null;
+}
+
+// ==============================
 // ARRASTAR POR TOQUE (CELULAR)
 // ==============================
 // O toque só arrasta após ~250 ms pressionado; se o dedo se mover antes, vira rolagem normal.
@@ -1962,7 +2513,7 @@ let arrasteToque = null;
 // No toque, desliga o arrasto nativo do navegador (o mouse continua com HTML5 DnD)
 document.addEventListener('pointerdown', (e) => {
   const el = e.target.closest?.('[data-drag-kind]');
-  if (el) el.draggable = e.pointerType === 'mouse';
+  if (el) el.draggable = e.pointerType === 'mouse' && !e.target.closest('button, input, select, textarea');
 }, true);
 
 document.addEventListener('touchstart', (e) => {
@@ -1975,7 +2526,7 @@ document.addEventListener('touchstart', (e) => {
   const kind = el.dataset.dragKind;
   arrasteToque = {
     kind,
-    id: kind === 'player' ? el.dataset.playerId : el.dataset.teamId,
+    id: kind === 'player' ? el.dataset.playerId : (kind === 'fixture' ? el.dataset.matchId : el.dataset.teamId),
     el,
     x0: t.clientX,
     y0: t.clientY,
@@ -2007,6 +2558,7 @@ function ativarArrasteToque() {
   a.ghost = ghost;
   a.el.classList.add('opacity-40');
   if (navigator.vibrate) navigator.vibrate(15);
+  if (kind === 'fixture') mostrarAlvosPartida(a.id);
 }
 
 document.addEventListener('touchmove', (e) => {
@@ -2028,12 +2580,13 @@ document.addEventListener('touchmove', (e) => {
   if (t.clientY < 80) window.scrollBy(0, -12);
   else if (t.clientY > window.innerHeight - 110) window.scrollBy(0, 12);
 
-  // Time sob o dedo (o fantasma não recebe eventos)
-  const card = document.elementFromPoint(t.clientX, t.clientY)?.closest('[data-team-card]') || null;
-  const valido = card && !(a.kind === 'team' && card.dataset.teamId === a.id) ? card : null;
+  // Alvo sob o dedo (o fantasma não recebe eventos)
+  const sob = document.elementFromPoint(t.clientX, t.clientY);
+  const valido = a.kind === 'fixture' ? alvoPartidaSob(sob, a.id) : alvoTimeSob(sob, a);
+  const classes = a.kind === 'fixture' ? ['fixture-target'] : ['ring-2', 'ring-neon-accent'];
   if (a.alvo !== valido) {
-    a.alvo?.classList.remove('ring-2', 'ring-neon-accent');
-    valido?.classList.add('ring-2', 'ring-neon-accent');
+    a.alvo?.classList.remove(...classes);
+    valido?.classList.add(...classes);
     a.alvo = valido;
   }
 }, { passive: false });
@@ -2046,7 +2599,10 @@ function finalizarArrasteToque(e) {
   const { kind, id, alvo } = a;
   cancelarArrasteToque();
   if (!alvo) return;
-  if (kind === 'team') trocarPosicaoTimes(id, alvo.dataset.teamId);
+  if (kind === 'fixture') {
+    if (alvo.dataset.matchId) trocarRodadasPartidas(id, alvo.dataset.matchId);
+    else moverPartidaParaRodada(id, Number(alvo.dataset.roundBlock));
+  } else if (kind === 'team') trocarPosicaoTimes(id, alvo.dataset.teamId);
   else adicionarJogadorAoTime(id, alvo.dataset.teamId);
 }
 
@@ -2056,8 +2612,9 @@ function cancelarArrasteToque() {
   clearTimeout(a.timer);
   a.ghost?.remove();
   a.el.classList.remove('opacity-40');
-  a.alvo?.classList.remove('ring-2', 'ring-neon-accent');
+  a.alvo?.classList.remove('ring-2', 'ring-neon-accent', 'fixture-target');
   if (a.ativo) dragState = null;
+  if (a.ativo && a.kind === 'fixture') limparAlvosPartida();
   arrasteToque = null;
 }
 
@@ -2069,10 +2626,10 @@ function adicionarTimeManual() {
 
   // Usa a primeira cor da paleta que ainda não está em uso
   const coresUsadas = new Set(state.teams.map(t => (t.color || '').toLowerCase()));
-  const paleta = DEFAULT_TEAM_PALETTE.find(p => !coresUsadas.has(p.color.toLowerCase()))
-    || DEFAULT_TEAM_PALETTE[state.teams.length % DEFAULT_TEAM_PALETTE.length];
+  const paleta = teamPalette().find(p => !coresUsadas.has(p.color.toLowerCase()))
+    || teamPalette()[state.teams.length % teamPalette().length];
 
-  const base = `Time ${paleta.name.replace('Colete ', '')}`;
+  const base = `Time ${paleta.label}`;
   let nome = base;
   for (let n = 2; state.teams.some(t => t.name === nome); n++) nome = `${base} ${n}`;
 
@@ -2090,15 +2647,21 @@ function adicionarTimeManual() {
 async function removerTime(teamId) {
   const time = state.teams.find(t => t.id === teamId);
   if (!time) return;
+  const nPartidas = state.fixtures.filter(f => f.home_team_id === teamId || f.away_team_id === teamId).length;
+  const avisoPartidas = nPartidas > 0 ? `\n\nAtenção: ${nPartidas} partida(s) deste time também saem da tabela (o histórico já salvo é mantido).` : "";
   const confirmed = await showCustomConfirm(
-    `Remover o time "${time.name}"? Os jogadores continuam na lista.`,
+    `Remover o time "${time.name}"? Os jogadores continuam na lista.${avisoPartidas}`,
     "Remover Time",
     "Remover",
-    "Cancelar"
+    "Cancelar",
+    false,
+    { icone: 'triangle-alert' }
   );
   if (!confirmed) return;
   state.teams = state.teams.filter(t => t.id !== teamId);
+  state.fixtures = state.fixtures.filter(f => f.home_team_id !== teamId && f.away_team_id !== teamId);
   renderTeamsGrid();
+  renderFixtures();
   sincronizarEstadoServidor();
 }
 
@@ -2107,10 +2670,12 @@ function trocarCorTime(teamId, cor) {
   if (!time || !cor) return;
   time.color = cor;
   renderTeamsGrid();
+  renderFixtures();
+  atualizarOpcoesTimesModal();
   sincronizarEstadoServidor();
 }
 
-// Seletor de cor: só as cores da DEFAULT_TEAM_PALETTE
+// Seletor de cor: só as cores da paleta do servidor (teamPalette)
 let seletorCorTeamId = null;
 
 function abrirSeletorCor(event, teamId) {
@@ -2124,9 +2689,9 @@ function abrirSeletorCor(event, teamId) {
   const pop = document.createElement('div');
   pop.id = 'seletor-cor-time';
   pop.className = 'fixed z-[60] flex items-center gap-2 p-2 bg-slate-900/95 backdrop-blur border border-borderLight rounded-xl shadow-2xl';
-  pop.innerHTML = DEFAULT_TEAM_PALETTE.map(p => {
+  pop.innerHTML = teamPalette().map(p => {
     const selecionada = (time.color || '').toLowerCase() === p.color.toLowerCase();
-    return `<button type="button" title="${p.name.replace('Colete ', '')}" data-h-click="escolherCorTime" data-a="${escapeHtml(JSON.stringify([p.color]))}" class="ds-0dcd82c1-${p.color.slice(1)} w-6 h-6 rounded-full transition hover:scale-110 ${selecionada ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}"></button>`;
+    return `<button type="button" title="${p.label}" data-h-click="escolherCorTime" data-a="${escapeHtml(JSON.stringify([p.color]))}" class="ds-0dcd82c1-${p.color.slice(1)} w-6 h-6 rounded-full transition hover:scale-110 ${selecionada ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}"></button>`;
   }).join('');
   document.body.appendChild(pop);
 
@@ -2259,9 +2824,41 @@ function removerJogadorDoTime(playerId, teamId) {
 
 async function gerarTabelaConfrontos() {
   if (window.SoundManager) window.SoundManager.play('efeitos');
+  if (state.config.championship_type === "custom") {
+    showToast("O formato Livre não tem padrão de tabela: adicione as partidas manualmente.");
+    return;
+  }
   if (state.teams.length < 2) {
     await showCustomAlert("Você precisa sortear pelo menos 2 times primeiro!", "Times Insuficientes");
     return;
+  }
+
+  // Tabela de turnos: calcula antes de perguntar. Se o servidor recusar (ex.: time sem jogadores), avisa e para.
+  let tabelaCalculada = null;
+  if (state.config.championship_type !== "king") {
+    try {
+      const res = await fetch("/api/generate-schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teams: state.teams,
+          rounds: state.config.total_rounds || 1,
+          first_home_id: state.config.first_match_home_id || null,
+          first_away_id: state.config.first_match_away_id || null
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await showCustomAlert(data.detail || "Erro ao gerar tabela de confrontos.", "Não é possível gerar a tabela", false,
+          { icone: 'circle-x' });
+        return;
+      }
+      tabelaCalculada = data;
+    } catch (err) {
+      console.error(err);
+      await showCustomAlert("Erro ao gerar tabela de confrontos.", "Erro no Agendamento", false, { icone: 'circle-x' });
+      return;
+    }
   }
 
   // Se já houver partidas geradas na tabela, exige confirmação para recriar
@@ -2270,42 +2867,98 @@ async function gerarTabelaConfrontos() {
       "Deseja realmente recriar a tabela de confrontos? Todos os placares e eventos atuais serão substituídos.",
       "Recriar Tabela",
       "Recriar Tabela",
-      "Cancelar"
+      "Cancelar",
+      false,
+      { icone: 'triangle-alert' }
     );
     if (!confirmed) return;
   }
 
-  // Se o formato configurado for "Livre" e ainda não houver partidas
-  if (state.config.championship_type === "custom") {
+  // Rei da Pelada: gera só a primeira partida; as seguintes saem conforme os resultados
+  if (state.config.championship_type === "king") {
+    state.fixtures = [];
+    atualizarBaseRegras();
+    const ok = await gerarProximaPartidaRei();
     switchTab("fixtures");
-    if (state.fixtures.length === 0) {
-      abrirModalNovaPartida();
-      showToast("Modo Livre: adicione as rodadas e partidas desejadas!");
-    } else {
-      renderFixtures();
-    }
+    if (ok) showToast("Rei da Pelada: primeira partida pronta!");
     return;
   }
 
-  try {
-    const res = await fetch("/api/generate-schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        teams: state.teams,
-        rounds: state.config.total_rounds || 1
-      })
-    });
-    const fixtures = await res.json();
-    state.fixtures = fixtures;
+  state.fixtures = tabelaCalculada;
+  atualizarBaseRegras();
 
+  renderFixtures();
+  sincronizarEstadoServidor();
+  switchTab("fixtures");
+  showToast(`${tabelaCalculada.length} confrontos agendados!`);
+}
+
+// ==============================
+// REI DA PELADA
+// ==============================
+function corpoRei() {
+  const c = state.config;
+  return {
+    teams: state.teams,
+    fixtures: state.fixtures.map(f => ({
+      id: f.id, home_team_id: f.home_team_id, away_team_id: f.away_team_id,
+      home_score: f.home_score, away_score: f.away_score, finished: !!f.finished,
+      winner_team_id: f.winner_team_id ?? null, is_draw: !!f.is_draw, played_at: f.played_at ?? null
+    })),
+    first_home_id: c.first_match_home_id || null,
+    first_away_id: c.first_match_away_id || null,
+    draw_rule: c.king_draw_rule || "both",
+    max_consecutive_wins: c.king_max_consecutive_wins || 0,
+    points_win: c.points_win || 3,
+    points_draw: c.points_draw ?? 1
+  };
+}
+
+async function consultarRei() {
+  const res = await fetch("/api/king/next-match", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(corpoRei())
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Falha ao calcular a próxima partida.");
+  }
+  return res.json();
+}
+
+// Cria a próxima partida do Rei da Pelada (se não houver uma em aberto)
+async function gerarProximaPartidaRei() {
+  if (state.fixtures.some(f => !f.finished)) return false;
+  try {
+    const data = await consultarRei();
+    if (!data.match) return false;
+    state.fixtures.push(data.match);
     renderFixtures();
     sincronizarEstadoServidor();
-    switchTab("fixtures");
-    showToast(`${fixtures.length} confrontos agendados!`);
+    return true;
   } catch (err) {
     console.error(err);
-    await showCustomAlert("Erro ao gerar tabela de confrontos.", "Erro no Agendamento");
+    await showCustomAlert(err.message || "Erro ao gerar a próxima partida.", "Rei da Pelada", false,
+      { icone: 'circle-x' });
+    return false;
+  }
+}
+
+// Faixa com quem está em campo e a fila de espera
+async function atualizarFilaRei() {
+  const el = document.getElementById("king-queue-banner");
+  if (!el) return;
+  try {
+    const data = await consultarRei();
+    const banner = document.getElementById("king-queue-banner");
+    if (!banner || !data) return;
+    const nome = id => (state.teams.find(t => t.id === id) || {}).name || id;
+    const fila = (data.queue || []).map(id => renderTeamBadge(nome(id), id)).join(" ");
+    banner.innerHTML = `<i data-lucide="clock" class="w-3.5 h-3.5 text-slate-400 shrink-0"></i><span class="font-bold text-slate-300">Fila de espera:</span> ${fila || '<span class="text-slate-500">ninguém</span>'}`;
+    refreshIcons();
+  } catch (e) {
+    el.textContent = "";
   }
 }
 
@@ -2377,12 +3030,32 @@ function abrirModalNovaPartida(prefilledRound = null) {
     return;
   }
 
-  const modal = document.getElementById("modal-custom-match");
+  // Fora do Livre, a partida avulsa pode fugir do formato e marca [MOD]
+  const isCustom = state.config.championship_type === "custom";
+  abrirModal({
+    template: 'tpl-custom-match',
+    titulo: isCustom ? "Nova Partida Livre" : "Nova Partida",
+    icone: 'plus-circle',
+    tom: 'info',
+    largura: 'md',
+    mensagemHtml: true,
+    mensagem: '<p>Escolha a rodada e os dois times que vão se enfrentar.</p>',
+    botoes: { ok: 'Adicionar Partida', cancel: 'Cancelar' },
+    validar: validarNovaPartidaLivre,
+    aoRenderizar: () => preencherNovaPartida(prefilledRound)
+  });
+}
+
+function preencherNovaPartida(prefilledRound) {
   const homeSelect = document.getElementById("custom-match-home");
   const awaySelect = document.getElementById("custom-match-away");
   const roundInput = document.getElementById("custom-match-round");
+  const avisoMod = document.getElementById("custom-match-mod-hint");
 
-  if (!modal || !homeSelect || !awaySelect || !roundInput) return;
+  if (!homeSelect || !awaySelect || !roundInput) return;
+
+  const isCustom = state.config.championship_type === "custom";
+  if (avisoMod) avisoMod.classList.toggle("hidden", isCustom);
 
   // Garante seleção inicial de times distintos
   homeSelect.value = state.teams[0].id;
@@ -2399,34 +3072,28 @@ function abrirModalNovaPartida(prefilledRound = null) {
     roundInput.value = 1;
   }
 
-  modal.classList.remove("hidden");
   refreshIcons();
 }
 
-function fecharModalNovaPartida() {
-  document.getElementById("modal-custom-match")?.classList.add("hidden");
+function submeterNovaPartida(event) {
+  event.preventDefault();
+  confirmarModalAtual();
 }
 
-function salvarNovaPartidaLivre(event) {
-  event.preventDefault();
-  if (window.SoundManager) window.SoundManager.play('efeitos');
+// Valida a partida livre. Devolve o aviso (string) ou cria a partida e devolve null (fecha a janela).
+function validarNovaPartidaLivre() {
   const roundNum = Math.max(1, parseInt(document.getElementById("custom-match-round").value) || 1);
   const homeId = document.getElementById("custom-match-home").value;
   const awayId = document.getElementById("custom-match-away").value;
 
-  if (homeId === awayId) {
-    showCustomAlert("O time mandante e o visitante não podem ser o mesmo!", "Times Iguais");
-    return;
-  }
+  if (homeId === awayId) return "O time mandante e o visitante não podem ser o mesmo!";
 
   const homeTeam = state.teams.find(t => t.id === homeId);
   const awayTeam = state.teams.find(t => t.id === awayId);
+  if (!homeTeam || !awayTeam) return "Times selecionados não foram encontrados.";
+  if (!(homeTeam.players || []).length || !(awayTeam.players || []).length) return "Os dois times precisam ter jogadores.";
 
-  if (!homeTeam || !awayTeam) {
-    showCustomAlert("Times selecionados não foram encontrados.", "Erro");
-    return;
-  }
-
+  if (window.SoundManager) window.SoundManager.play('efeitos');
   const newMatch = {
     id: "m_custom_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
     round_number: roundNum,
@@ -2449,22 +3116,26 @@ function salvarNovaPartidaLivre(event) {
   // Ordena por rodada
   state.fixtures.sort((a, b) => a.round_number - b.round_number);
 
-  fecharModalNovaPartida();
   renderFixtures();
   sincronizarEstadoServidor();
   showToast(`Partida adicionada à Rodada ${roundNum}!`);
+  return null;
 }
 
 async function removerPartidaCustomizada(matchId) {
   const match = state.fixtures.find(m => m.id === matchId);
   if (!match) return;
 
-  const homeBadge = renderTeamBadge(match.home_team_name, match.home_team_id);
-  const awayBadge = renderTeamBadge(match.away_team_name, match.away_team_id);
+  const quebraFormato = ["single", "double", "king"].includes(state.config.championship_type)
+    ? `\n\nAtenção: remover esta partida quebra o formato do campeonato e o título passará a indicar [MOD]. Você pode continuar, pois as regras da pelada são flexíveis.`
+    : "";
   const confirmed = await showCustomConfirm(
-    `Deseja realmente remover a partida "${homeBadge} x ${awayBadge}" da tabela?`,
+    `Deseja realmente remover a partida "${match.home_team_name} x ${match.away_team_name}" da tabela?${quebraFormato}`,
     "Remover Partida",
-    "Sim, Remover"
+    "Sim, Remover",
+    "Cancelar",
+    false,
+    { icone: 'triangle-alert' }
   );
   if (!confirmed) return;
 
@@ -2498,10 +3169,12 @@ async function limparTodasRodadas() {
 
   const totalJogos = state.fixtures.length;
   const confirmed = await showCustomConfirm(
-    `Deseja realmente remover todas as rodadas e confrontos (${totalJogos} ${totalJogos === 1 ? 'partida' : 'partidas'})? Os confrontos ativos serão excluídos da tabela.`,
+    `Deseja realmente remover todas as rodadas e confrontos (${totalJogos} ${totalJogos === 1 ? 'partida' : 'partidas'})?`,
     "Remover Todas as Rodadas",
     "Sim, Remover Tudo",
-    "Cancelar"
+    "Cancelar",
+    false,
+    { icone: 'triangle-alert' }
   );
   if (!confirmed) return;
 
@@ -2516,17 +3189,117 @@ async function limparTodasRodadas() {
   showToast("Todas as rodadas foram removidas da tabela!");
 }
 
+const CHAVES_REGRAS = ["championship_type", "first_match_home_id", "first_match_away_id", "king_draw_rule", "king_max_consecutive_wins"];
+
+function snapshotRegras(cfg) {
+  const snap = {};
+  CHAVES_REGRAS.forEach(k => { snap[k] = cfg[k] ?? null; });
+  return snap;
+}
+
+// A base do [MOD]: regras vigentes quando a tabela foi montada. Sem partidas finalizadas, mudar regra não quebra nada
+function atualizarBaseRegras(regrasAnteriores = null) {
+  const temFinalizada = (state.fixtures || []).some(f => f.finished);
+  if (!temFinalizada) {
+    state.config.rules_baseline = snapshotRegras(state.config);
+  } else if (!state.config.rules_baseline && regrasAnteriores) {
+    state.config.rules_baseline = regrasAnteriores; // pelada antiga: a base é o que valia antes desta mudança
+  }
+}
+
+const NOME_FORMATO = { single: "Turno Único", double: "Turno e Retorno", king: "Rei da Pelada", custom: "Livre" };
+let tokenChecagemFormato = 0;
+
+// Título "Rodadas e Confrontos - Formato" e a marca [MOD] quando edições fugiram das regras
+// Dados do formato enviados ao servidor para checar o [MOD] e as dicas de arraste
+function payloadFormato() {
+  const c = state.config;
+  return {
+    championship_type: c.championship_type || "single",
+    team_ids: state.teams.map(t => t.id),
+    fixtures: state.fixtures.map(f => ({
+      id: f.id, round_number: f.round_number ?? null,
+      home_team_id: f.home_team_id, away_team_id: f.away_team_id,
+      home_score: f.home_score, away_score: f.away_score, finished: !!f.finished,
+      winner_team_id: f.winner_team_id ?? null, is_draw: !!f.is_draw, played_at: f.played_at ?? null
+    })),
+    draw_rule: c.king_draw_rule || "both",
+    max_consecutive_wins: c.king_max_consecutive_wins || 0,
+    points_win: c.points_win || 3,
+    points_draw: c.points_draw ?? 1,
+    rules: snapshotRegras(c),
+    rules_baseline: c.rules_baseline || null
+  };
+}
+
+async function atualizarTituloFormato() {
+  const tipo = state.config.championship_type || "single";
+  const nome = document.getElementById("fixtures-format-name");
+  const mod = document.getElementById("fixtures-mod-flag");
+  if (nome) nome.textContent = ` - ${NOME_FORMATO[tipo] || NOME_FORMATO.single}`;
+  if (!mod) return;
+  const token = ++tokenChecagemFormato;
+  if (!state.fixtures.length) { mod.classList.add("hidden"); return; }
+  try {
+    const res = await fetch("/api/championship/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payloadFormato())
+    });
+    const data = await res.json();
+    if (token === tokenChecagemFormato) mod.classList.toggle("hidden", !data.modified);
+  } catch (e) {
+    if (token === tokenChecagemFormato) mod.classList.add("hidden");
+  }
+}
+
+// Clique na bolinha: vai para Jogos da Rodada e centraliza uma partida em andamento.
+// Com várias partidas rolando, cada clique avança para a próxima (volta ao início no fim).
+let ultimaPartidaEmAndamentoId = null;
+function irParaPartidaEmAndamento() {
+  const emAndamento = (state.fixtures || []).filter(x => !x.finished && x.timer_status === 'running');
+  if (emAndamento.length === 0) {
+    showToast('Nenhuma partida em andamento.');
+    return;
+  }
+  const idxAtual = emAndamento.findIndex(x => x.id === ultimaPartidaEmAndamentoId);
+  const m = emAndamento[(idxAtual + 1) % emAndamento.length];
+  ultimaPartidaEmAndamentoId = m.id;
+  // Se já está em Jogos da Rodada, só rola até o cartão (sem voltar ao topo)
+  const jaNaAba = currentActiveTab === 'fixtures';
+  if (!jaNaAba) switchTab('fixtures');
+  // Ao trocar de aba, espera o painel renderizar antes de rolar
+  setTimeout(() => {
+    const card = document.getElementById(`match-card-${m.id}`);
+    if (!card) return;
+    // Centro da área visível: abaixo do cabeçalho sticky
+    const headerH = document.getElementById('app-header')?.offsetHeight || 0;
+    const rect = card.getBoundingClientRect();
+    const alvo = window.scrollY + rect.top + rect.height / 2 - (window.innerHeight + headerH) / 2;
+    window.scrollTo({ top: Math.max(0, alvo), behavior: 'smooth' });
+  }, jaNaAba ? 0 : 350);
+}
+
+// Bolinha de status do cabeçalho: verde piscando se alguma partida estiver rolando
+function atualizarStatusPelada() {
+  const dot = document.getElementById('pelada-status-dot');
+  if (!dot) return;
+  const emAndamento = (state.fixtures || []).some(m => !m.finished && m.timer_status === 'running');
+  // Mesmo efeito do ponto do VS no cartão: núcleo sólido + anel pulsando (animate-ping)
+  dot.innerHTML = emAndamento
+    ? `<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>`
+    : `<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-slate-500"></span>`;
+  dot.title = emAndamento ? 'Partida em andamento' : 'Nenhuma partida em andamento';
+}
+
 function renderFixtures() {
+  atualizarTituloFormato();
+  atualizarStatusPelada();
   const container = document.getElementById("fixtures-container");
-  const badge = document.getElementById("badge-pending-matches");
   const badgeMobile = document.getElementById("badge-pending-matches-mobile");
   if (!container) return;
 
   const pending = state.fixtures.filter(m => !m.finished).length;
-  if (badge) {
-    badge.textContent = pending;
-    badge.classList.toggle("hidden", pending === 0);
-  }
   if (badgeMobile) {
     badgeMobile.textContent = pending;
     badgeMobile.classList.toggle("hidden", pending === 0);
@@ -2566,24 +3339,21 @@ function renderFixtures() {
     roundsMap[m.round_number].push(m);
   });
 
-  const isCustomMode = state.config.championship_type === "custom";
   const isLeader = state.role === 'admin';
 
+  const isKing = state.config.championship_type === "king";
   let html = "";
   for (const [roundNum, matches] of Object.entries(roundsMap)) {
+    const blocoRodada = isLeader && !isKing
+      ? `data-round-block="${roundNum}" data-h-dragover="onRoundDragOver" data-h-dragleave="onFixtureDragLeave" data-h-drop="onRoundDrop" data-a="${escapeHtml(JSON.stringify(["@event", roundNum]))}"`
+      : "";
     html += `
-      <div class="space-y-3">
+      <div class="space-y-3" ${blocoRodada}>
         <div class="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
           <div class="flex items-center space-x-2">
             <i data-lucide="layers" class="w-4 h-4 text-emerald-400"></i>
-            <span>Rodada ${roundNum}</span>
+            <span>${isKing ? "Partida" : "Rodada"} ${roundNum}</span>
           </div>
-          ${isCustomMode && isLeader ? `
-            <button data-h-click="abrirModalNovaPartida" data-a="${escapeHtml(JSON.stringify([roundNum]))}" class="text-[11px] text-neon-accent hover:underline flex items-center gap-1 font-semibold normal-case">
-              <i data-lucide="plus" class="w-3 h-3"></i>
-              <span>Jogo na Rodada ${roundNum}</span>
-            </button>
-          ` : ''}
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           ${matches.map(m => renderSingleMatchCard(m)).join("")}
@@ -2591,15 +3361,24 @@ function renderFixtures() {
       </div>
     `;
   }
+  // Rei da Pelada: fila de espera logo abaixo da última partida (preenchida por atualizarFilaRei)
+  if (isKing) html += `<div id="king-queue-banner" class="flex flex-wrap items-center gap-1.5 text-xs text-slate-400"></div>`;
 
   container.innerHTML = html;
   refreshIcons();
+  aplicarEfeitosGol();
+  if (isKing) atualizarFilaRei();
 
   // Inicia o tick se houver partidas com cronômetro em execução
   const hasRunningTimer = (state.fixtures || []).some(m => !m.finished && m.timer_status === 'running');
   if (hasRunningTimer) {
     startGlobalMatchTimerTick();
   }
+}
+
+// "DD/MM/YYYY HH:MM:SS" -> "DD/MM/YYYY HH:MM"
+function formatarDataEdicao(texto) {
+  return String(texto || "").replace(/^(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}):\d{2}$/, "$1");
 }
 
 function renderSingleMatchCard(m) {
@@ -2609,8 +3388,34 @@ function renderSingleMatchCard(m) {
   const homeColor = getTeamColor(m.home_team_id || m.home_team_name);
   const awayColor = getTeamColor(m.away_team_id || m.away_team_name);
   
+  const arrastar = isLeader
+    ? `data-drag-kind="fixture" data-h-dragstart="onFixtureDragStart" data-h-dragend="onFixtureDragEnd" data-h-dragover="onFixtureDragOver" data-h-dragleave="onFixtureDragLeave" data-h-drop="onFixtureDrop" data-a="${escapeHtml(JSON.stringify(["@event", m.id]))}"`
+    : "";
+  const pillCronometro = m.started_at ? `
+    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pitch/80 border border-borderLight shadow-inner text-slate-300 whitespace-nowrap">
+      <span class="text-[11px] text-slate-400">Início em <strong class="text-white font-mono">${escapeHtml(m.started_at)}</strong></span>
+      ${!isFinished ? `
+        <span class="w-1.5 h-1.5 rounded-full ${m.timer_status === 'running' ? 'bg-emerald-400 animate-pulse' : (m.timer_status === 'paused' ? 'bg-amber-400' : 'bg-slate-500')}"></span>
+        <span id="match-timer-${m.id}" class="font-mono font-black text-xs ${m.timer_status === 'running' ? 'text-emerald-400' : (m.timer_status === 'paused' ? 'text-amber-400' : 'text-slate-300')}">
+          ${formatMatchRemainingTime(m)}
+        </span>
+        ${m.timer_status === 'paused' ? `
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="w-3.5 h-3.5 text-amber-400 shrink-0" role="img" aria-label="Pausado" title="Pausado"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          ${isLeader ? `
+            <button
+              type="button"
+              data-h-click="removerInicioPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}"
+              title="Descartar início da partida"
+              aria-label="Descartar início da partida"
+              class="w-4 h-4 rounded-full bg-rose-500/20 hover:bg-rose-500 text-rose-400 hover:text-white flex items-center justify-center transition active:scale-95 ml-0.5">
+              <i data-lucide="x" class="w-3 h-3 stroke-[2.5]"></i>
+            </button>
+          ` : ''}
+        ` : ''}
+      ` : ''}
+    </span>` : '';
   return `
-    <div id="match-card-${m.id}" class="bg-surface border ${isFinished ? 'border-borderLight/40 opacity-90' : 'border-borderLight hover:border-emerald-500/50'} rounded-3xl p-5 space-y-4 transition shadow-lg relative overflow-hidden">
+    <div id="match-card-${m.id}" data-match-id="${m.id}" ${arrastar} class="${isLeader ? 'fixture-draggable ' : ''}bg-surface border ${isFinished ? 'border-borderLight/40 opacity-90' : 'border-borderLight hover:border-emerald-500/50'} rounded-3xl p-5 space-y-4 transition shadow-lg relative overflow-hidden">
       <!-- Status Cravado / Gravado Centralizado com Frisos Metálicos -->
       <div class="flex items-center gap-3 pt-0.5 pb-0.5">
         <div class="flex-1 match-finished-groove-left"></div>
@@ -2624,7 +3429,7 @@ function renderSingleMatchCard(m) {
       <div class="flex items-center justify-between gap-4">
         
         <!-- Mandante -->
-        <div class="flex-1 text-center space-y-2">
+        <div id="side-home-${m.id}" class="flex-1 text-center space-y-2">
           <h4 class="ds-c8c42c63-${homeColor.slice(1)} font-extrabold text-sm sm:text-base truncate">${escapeHtml(m.home_team_name)}</h4>
           ${(!isFinished && isLeader) ? `
             <div class="flex items-center justify-center gap-1.5">
@@ -2657,7 +3462,7 @@ function renderSingleMatchCard(m) {
         </div>
 
         <!-- Visitante -->
-        <div class="flex-1 text-center space-y-2">
+        <div id="side-away-${m.id}" class="flex-1 text-center space-y-2">
           <h4 class="ds-c8c42c63-${awayColor.slice(1)} font-extrabold text-sm sm:text-base truncate">${escapeHtml(m.away_team_name)}</h4>
           ${(!isFinished && isLeader) ? `
             <div class="flex items-center justify-center gap-1.5">
@@ -2672,69 +3477,54 @@ function renderSingleMatchCard(m) {
 
       </div>
       
-      <!-- Linha do Cronômetro Regressivo e Início de Partida -->
-      ${m.started_at ? `
-        <div class="flex items-center justify-center gap-2 pt-1 pb-0.5 text-xs">
-          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pitch/80 border border-borderLight shadow-inner text-slate-300">
-            <span class="text-[11px] text-slate-400">Partida iniciada em <strong class="text-white font-mono">${escapeHtml(m.started_at)}</strong></span>
-            ${!isFinished ? `
-              <span class="w-1.5 h-1.5 rounded-full ${m.timer_status === 'running' ? 'bg-emerald-400 animate-pulse' : (m.timer_status === 'paused' ? 'bg-amber-400' : 'bg-slate-500')}"></span>
-              <span id="match-timer-${m.id}" class="font-mono font-black text-xs ${m.timer_status === 'running' ? 'text-emerald-400' : (m.timer_status === 'paused' ? 'text-amber-400' : 'text-slate-300')}">
-                ${formatMatchRemainingTime(m)}
-              </span>
-              ${m.timer_status === 'paused' ? `
-                <span class="text-[10px] uppercase tracking-wider font-bold text-amber-400/80 bg-amber-500/10 px-1.5 py-0.2 rounded">Pausado</span>
-                ${isLeader ? `
-                  <button 
-                    type="button" 
-                    data-h-click="removerInicioPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" 
-                    title="Descartar início da partida" 
-                    aria-label="Descartar início da partida" 
-                    class="w-4 h-4 rounded-full bg-rose-500/20 hover:bg-rose-500 text-rose-400 hover:text-white flex items-center justify-center transition active:scale-95 ml-0.5">
-                    <i data-lucide="x" class="w-3 h-3 stroke-[2.5]"></i>
-                  </button>
-                ` : ''}
-              ` : ''}
-            ` : ''}
-          </span>
-        </div>
-      ` : ''}
-
-      <!-- Atribuição rápida de gols aos atletas -->
+      <!-- Atribuição rápida de gols aos atletas; cronômetro centralizado na mesma linha -->
       ${!isFinished ? `
-        <div class="pt-2 border-t border-borderLight/40 flex items-center justify-between text-xs">
-          ${isLeader ? `
-            <button data-h-click="abrirAtribuicaoGols" data-a="${escapeHtml(JSON.stringify([m.id]))}" class="text-slate-400 hover:text-neon-accent flex items-center gap-1 transition">
-              <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
-              <span>Quem fez os gols? (${m.events ? m.events.length : 0})</span>
-            </button>
-            <div class="flex items-center gap-2">
-              <button data-h-click="removerPartidaCustomizada" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Excluir Partida" aria-label="Excluir Partida" class="w-8 h-8 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
-                <i data-lucide="trash-2" class="w-4 h-4"></i>
+        <div class="pt-2 border-t border-borderLight/40 grid grid-cols-[1fr_auto_1fr] items-center gap-1 sm:gap-2 text-xs">
+          <div class="justify-self-start min-w-0">
+            ${isLeader ? `
+              <button data-h-click="abrirAtribuicaoGols" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Quem fez os gols? (${m.events ? m.events.length : 0})" aria-label="Quem fez os gols" class="w-8 h-8 bg-slate-500/10 hover:bg-slate-500/20 text-slate-300 border border-slate-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+                <i data-lucide="user-check" class="w-4 h-4"></i>
               </button>
-              <button data-h-click="salvarPartidaFinalizada" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Salvar Resultado" aria-label="Salvar Resultado" class="w-8 h-8 bg-neon-accent hover:bg-emerald-400 text-black font-extrabold rounded-xl transition shadow flex items-center justify-center active:scale-95">
-                <i data-lucide="save" class="w-4 h-4"></i>
-              </button>
-            </div>
-          ` : `
-            <span class="text-[11px] text-slate-500 flex items-center gap-1">
-              <i data-lucide="clock" class="w-3.5 h-3.5 text-amber-400"></i> Partida em andamento
-            </span>
-            <span class="text-[11px] text-slate-400">${m.events ? m.events.length : 0} gols registrados</span>
-          `}
+            ` : `
+              <span class="text-[11px] text-slate-500 flex items-center gap-1">
+                <i data-lucide="clock" class="w-3.5 h-3.5 text-amber-400"></i> Em andamento
+              </span>
+            `}
+          </div>
+          <div class="justify-self-center min-w-0">${pillCronometro}</div>
+          <div class="justify-self-end">
+            ${isLeader ? `
+              <div class="flex items-center gap-2">
+                ${`
+                <button data-h-click="removerPartidaCustomizada" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Excluir Partida" aria-label="Excluir Partida" class="w-8 h-8 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+                `}
+                <button data-h-click="salvarPartidaFinalizada" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Salvar Resultado" aria-label="Salvar Resultado" class="w-8 h-8 bg-neon-accent/10 hover:bg-neon-accent/20 text-neon-accent border border-neon-accent/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+                  <i data-lucide="save" class="w-4 h-4"></i>
+                </button>
+              </div>
+            ` : ''}
+          </div>
         </div>
       ` : `
-        <div class="pt-2 border-t border-borderLight/30 flex items-center justify-between text-xs text-slate-400">
-          <button data-h-click="verDetalhesPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" class="text-neon-accent hover:underline flex items-center gap-1">
-            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
-            <span>Ver detalhes</span>
-          </button>
-          ${isLeader ? `
-            <button data-h-click="reabrirPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" class="px-3 py-1.5 bg-cardLight hover:bg-amber-400 hover:text-black text-amber-400 font-bold rounded-xl transition flex items-center gap-1 text-xs active:scale-95">
-              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
-              <span>Editar Partida</span>
+        <div class="pt-2 border-t border-borderLight/30 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-2 text-xs text-slate-400">
+          <div class="justify-self-start min-w-0">
+            ${m.edited_at ? `
+              <span class="text-rose-500 font-semibold text-[11px]" title="Partida editada depois de finalizada">* Editada em ${escapeHtml(formatarDataEdicao(m.edited_at))}</span>
+            ` : ''}
+          </div>
+          <div class="justify-self-center min-w-0 order-first sm:order-none">${pillCronometro}</div>
+          <div class="justify-self-end flex items-center gap-2">
+            <button data-h-click="verDetalhesPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Ver detalhes" aria-label="Ver detalhes" class="w-8 h-8 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+              <i data-lucide="info" class="w-4 h-4 icone-info"></i>
             </button>
-          ` : ''}
+            ${isLeader ? `
+              <button data-h-click="reabrirPartida" data-a="${escapeHtml(JSON.stringify([m.id]))}" title="Editar Partida" aria-label="Editar Partida" class="w-8 h-8 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-semibold rounded-xl transition flex items-center justify-center active:scale-95">
+                <i data-lucide="edit-3" class="w-4 h-4"></i>
+              </button>
+            ` : ''}
+          </div>
         </div>
       `}
     </div>
@@ -2792,7 +3582,7 @@ function startGlobalMatchTimerTick() {
       if (remaining === 0 && !m._alarmTriggered) {
         m._alarmTriggered = true;
         m.timer_status = 'stopped';
-        const alarmFile = (state.config && state.config.alarm_sound) ? state.config.alarm_sound : 'standard-emergency-warning-signal.mp3';
+        const alarmFile = obterSomAlarme();
         if (window.SoundManager) {
           window.SoundManager.playAlarm(alarmFile);
         }
@@ -2896,9 +3686,26 @@ function pararPreviewAlarme() {
   atualizarBotaoPreviewAlarme(false);
 }
 
+const ALARME_PADRAO = 'standard-emergency-warning-signal.mp3';
+
+// Som do alarme é preferência pessoal (por dispositivo), não da pelada
+function obterSomAlarme() {
+  try { return localStorage.getItem('futmatch_alarm_sound') || ALARME_PADRAO; } catch (e) { return ALARME_PADRAO; }
+}
+
+function carregarSomAlarme() {
+  const el = document.getElementById("cfg-alarm-sound");
+  if (!el) return;
+  el.value = obterSomAlarme();
+  if (el.value !== obterSomAlarme()) el.value = ALARME_PADRAO;
+}
+
 function aoMudarSomAlarme() {
   pararPreviewAlarme();
-  autoSalvarConfiguracoes();
+  const el = document.getElementById("cfg-alarm-sound");
+  if (!el) return;
+  try { localStorage.setItem('futmatch_alarm_sound', el.value); } catch (e) {}
+  showToast("Preferência salva!");
 }
 
 function testarSomAlarme() {
@@ -2914,9 +3721,76 @@ function testarSomAlarme() {
   }
 }
 
+// Efeito de gol pendente: é aplicado no cartão logo após o re-render da aba
+let goalFxPendente = null;
+
+function aplicarEfeitosGol() {
+  const fx = goalFxPendente;
+  goalFxPendente = null;
+  if (!fx) return;
+  const side = document.getElementById(`side-${fx.side}-${fx.matchId}`);
+  const score = document.getElementById(`score-${fx.side}-${fx.matchId}`);
+  if (!side) return;
+  const verde = fx.tipo === 'add';
+
+  // Placar pisca 3x (0,5s cada), vermelho no menos e verde no mais
+  if (score) {
+    const classe = verde ? 'goal-score-blink-green' : 'goal-score-blink-red';
+    score.classList.add(classe);
+    setTimeout(() => score.classList.remove(classe), 1600);
+  }
+
+  // Degradê suave em todo o cartão, saindo da borda do lado do time (esquerda ou direita), piscando 3x
+  const card = side.closest('[id^="match-card-"]') || side;
+  card.classList.add('goal-fx-host');
+  const flash = document.createElement('span');
+  const lado = fx.side === 'home' ? 'left' : 'right';
+  flash.className = `goal-card-flash goal-card-flash-${verde ? 'green' : 'red'}-${lado}`;
+  card.appendChild(flash);
+  setTimeout(() => flash.remove(), 1600);
+
+  // Só no mais: confete branco e a cor do time (lida do nome do time já renderizado)
+  if (verde) {
+    const nomeTime = side.querySelector('h4');
+    // canvas-confetti aceita hex de forma garantida: converte o rgb(...) computado
+    const rgb = nomeTime ? getComputedStyle(nomeTime).color.match(/\d+/g) : null;
+    const corTime = rgb ? '#' + rgb.slice(0, 3).map(v => Number(v).toString(16).padStart(2, '0')).join('') : '#ffffff';
+    dispararConfetes(side, corTime);
+  }
+}
+
+// Confetes na área do cartão (atrás do texto e dos botões), caindo por 3s
+function dispararConfetes(side, cor) {
+  if (!window.confetti || typeof window.confetti.create !== 'function') return;
+  const card = side.closest('[id^="match-card-"]') || side;
+  if (getComputedStyle(card).position === 'static') card.style.position = 'relative';
+  card.classList.add('goal-fx-host');
+  const cardRect = card.getBoundingClientRect();
+  const sideRect = side.getBoundingClientRect();
+  // Faixa horizontal do lado do time, normalizada em relação ao cartão
+  const xMin = (sideRect.left - cardRect.left) / cardRect.width;
+  const xMax = (sideRect.right - cardRect.left) / cardRect.width;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'goal-confetti-canvas';
+  canvas.width = card.offsetWidth;
+  canvas.height = card.offsetHeight;
+  card.appendChild(canvas);
+  const fire = window.confetti.create(canvas, { resize: false, useWorker: false });
+  const duracao = 3000;
+  const cores = ['#ffffff', cor];
+  const inicio = performance.now();
+  const timer = setInterval(() => {
+    if (performance.now() - inicio >= duracao) { clearInterval(timer); return; }
+    const x = xMin + Math.random() * (xMax - xMin);
+    fire({ particleCount: 5, angle: 270, spread: 50, startVelocity: 6, gravity: 0.9, origin: { x, y: 0 }, colors: cores, ticks: 220, scalar: 0.9 });
+  }, 120);
+  setTimeout(() => canvas.remove(), duracao + 2000);
+}
+
 function adjustScore(matchId, side, delta) {
   const m = state.fixtures.find(x => x.id === matchId);
   if (!m || m.finished) return;
+  const antes = side === 'home' ? m.home_score : m.away_score;
 
   if (side === 'home') {
     const newScore = Math.max(0, m.home_score + delta);
@@ -2947,6 +3821,11 @@ function adjustScore(matchId, side, delta) {
       }
     }
   }
+  const depois = side === 'home' ? m.home_score : m.away_score;
+  if (depois !== antes) {
+    goalFxPendente = { matchId, side, tipo: delta > 0 ? 'add' : 'remove' };
+    renderFixtures();
+  }
   sincronizarEstadoServidor(true);
 }
 
@@ -2966,13 +3845,7 @@ function abrirAtribuicaoGols(matchId) {
     return;
   }
 
-  const modal = document.getElementById("modal-match-details");
-  const content = document.getElementById("modal-content");
-  if (!modal || !content) return;
-
-  renderConteudoAtribuicaoGols(matchId);
-  modal.classList.remove("hidden");
-  refreshIcons();
+  abrirModalDetalhesPartida(() => renderConteudoAtribuicaoGols(matchId), { titulo: 'Atribuir Gols', mensagem: 'Registre os gols de cada jogador.', icone: 'info', botoes: null });
 }
 
 function renderConteudoAtribuicaoGols(matchId) {
@@ -3119,7 +3992,7 @@ function adicionarGolJogador(matchId, playerId, playerName) {
   const awayGoalsAssigned = m.events.filter(e => awayPlayerIds.has(e.player_id) && e.event_type === "goal").length;
 
   if (isHome) {
-    const homeBadge = renderTeamBadge(m.home_team_name, m.home_team_id);
+    const homeBadge = m.home_team_name;
     if (m.home_score === 0) {
       showToast(`${homeBadge} está com 0 gols no placar!`);
       return;
@@ -3129,7 +4002,7 @@ function adicionarGolJogador(matchId, playerId, playerName) {
       return;
     }
   } else if (isAway) {
-    const awayBadge = renderTeamBadge(m.away_team_name, m.away_team_id);
+    const awayBadge = m.away_team_name;
     if (m.away_score === 0) {
       showToast(`${awayBadge} está com 0 gols no placar!`);
       return;
@@ -3197,13 +4070,18 @@ async function reabrirPartida(matchId) {
   const m = state.fixtures.find(x => x.id === matchId);
   if (!m) return;
 
-  const homeBadge = renderTeamBadge(m.home_team_name, m.home_team_id);
-  const awayBadge = renderTeamBadge(m.away_team_name, m.away_team_id);
+  const isKing = state.config.championship_type === "king";
+  const ultimaFinalizada = state.fixtures.map(f => !!f.finished).lastIndexOf(true);
+  const avisoRei = (isKing && state.fixtures.indexOf(m) !== ultimaFinalizada)
+    ? `\n\n`
+    : "";
   const confirmed = await showCustomConfirm(
-    `Deseja reabrir a partida "${homeBadge} x ${awayBadge}" para edição? O resultado será recalculado quando você salvar novamente.`,
+    `Deseja reabrir a partida "${m.home_team_name} x ${m.away_team_name}" para edição?${avisoRei}`,
     "Editar Partida",
     "Reabrir para Edição",
-    "Cancelar"
+    "Cancelar",
+    false,
+    { icone: 'triangle-alert' }
   );
   if (!confirmed) return;
 
@@ -3221,6 +4099,7 @@ async function reabrirPartida(matchId) {
 
     if (res.ok) {
       m.finished = false;
+      m.reopened = true; // ao salvar de novo, a partida passa a mostrar a marca de edição
       renderFixtures();
       sincronizarEstadoServidor();
       await atualizarDashboard();
@@ -3230,7 +4109,7 @@ async function reabrirPartida(matchId) {
     }
   } catch (err) {
     console.error(err);
-    await showCustomAlert("Não foi possível reabrir a partida para edição.", "Erro");
+    await showCustomAlert("Não foi possível reabrir a partida para edição.", "Erro", false, { icone: 'circle-x' });
   }
 }
 
@@ -3293,18 +4172,25 @@ async function salvarPartidaFinalizada(matchId) {
 
     const data = await res.json();
     m.finished = true;
-    m.played_at = data.match.played_at;
+    // O servidor define o vencedor (winner_team_id) e o empate: a tela usa esses campos
+    m.winner_team_id = data.match.winner_team_id;
+    m.is_draw = data.match.is_draw;
+    if (m.reopened) {
+      m.edited_at = data.match.played_at;
+      m.reopened = false;
+    } else {
+      m.played_at = data.match.played_at;
+    }
     m.timer_status = 'stopped';
 
     renderFixtures();
     sincronizarEstadoServidor();
+    if (state.config.championship_type === "king") await gerarProximaPartidaRei();
     await atualizarDashboard();
-    const homeBadge = renderTeamBadge(m.home_team_name, m.home_team_id);
-    const awayBadge = renderTeamBadge(m.away_team_name, m.away_team_id);
-    showToast(`Resultado salvo! ${homeBadge} ${m.home_score} x ${m.away_score} ${awayBadge}`);
+    showToast(`Resultado salvo! ${m.home_team_name} ${m.home_score} x ${m.away_score} ${m.away_team_name}`);
   } catch (err) {
     console.error(err);
-    await showCustomAlert(err.message || "Falha ao salvar a partida.", "Erro na Gravação");
+    await showCustomAlert(err.message || "Falha ao salvar a partida.", "Erro na Gravação", false, { icone: 'circle-x' });
   }
 }
 
@@ -4312,6 +5198,15 @@ function mudarPaginaHistorico(delta) {
   }, 460);
 }
 
+// Lado vencedor de uma partida: 'home', 'away' ou null (empate, sem resultado ou não finalizada).
+// Fonte única: winner_team_id, definido pelo servidor ao salvar o resultado.
+function ladoVencedor(match) {
+  if (match.is_draw || !match.finished || !match.winner_team_id) return null;
+  if (match.winner_team_id === match.home_team_id) return 'home';
+  if (match.winner_team_id === match.away_team_id) return 'away';
+  return null;
+}
+
 async function verDetalhesPartida(matchId) {
   // Procura no estado local ou busca do backend
   let match = state.fixtures.find(m => m.id === matchId);
@@ -4333,17 +5228,25 @@ async function verDetalhesPartida(matchId) {
     return;
   }
 
-  const modal = document.getElementById("modal-match-details");
+  abrirModalDetalhesPartida(null, {
+    titulo: 'Detalhes da Partida',
+    mensagem: `Rodada ${match.round_number}<br>${escapeHtml(match.played_at || '')}`,
+    mensagemHtml: true,
+    largura: '2xl',
+    icone: 'info',
+    botoes: { ok: 'Fechar' }
+  });
   const content = document.getElementById("modal-content");
-  if (!modal || !content) return;
+  if (!content) return;
 
-  const isHomeWinner = !match.is_draw && match.winner_team_id === match.home_team_id;
-  const isAwayWinner = !match.is_draw && match.winner_team_id === match.away_team_id;
-  const isHomeLoser = !match.is_draw && match.finished && match.winner_team_id && match.winner_team_id === match.away_team_id;
-  const isAwayLoser = !match.is_draw && match.finished && match.winner_team_id && match.winner_team_id === match.home_team_id;
+  const lado = ladoVencedor(match);
+  const isDraw = !!match.is_draw;
+  const isHomeWinner = lado === 'home';
+  const isAwayWinner = lado === 'away';
+  const isHomeLoser = lado === 'away';
+  const isAwayLoser = lado === 'home';
   const homeColor = getTeamColor(match.home_team_id || match.home_team_name);
   const awayColor = getTeamColor(match.away_team_id || match.away_team_name);
-  const winnerColor = isHomeWinner ? homeColor : (isAwayWinner ? awayColor : '#38bdf8');
 
   // Mapeia contagem de gols por jogador
   const playerGoalsCount = {};
@@ -4360,37 +5263,39 @@ async function verDetalhesPartida(matchId) {
     });
   }
 
-  const renderPlayerItem = (p) => {
+  // lado 'mandante' (esquerda): nome alinhado à direita e bolas na borda esquerda
+  // lado 'visitante' (direita): nome alinhado à esquerda e bolas na borda direita
+  const renderPlayerItem = (p, lado) => {
     const pName = typeof p === 'string' ? p : p.name;
     const pId = typeof p === 'object' && p.id ? p.id : null;
     const countById = pId && playerGoalsCount[pId] !== undefined ? playerGoalsCount[pId] : 0;
     const countByName = pName && playerGoalsCount[pName.toLowerCase().trim()] !== undefined ? playerGoalsCount[pName.toLowerCase().trim()] : 0;
     const count = Math.max(countById, countByName);
-    const balls = count > 0 ? ` <span class="inline-flex items-center gap-0.5 ml-1 text-base select-none">${'⚽'.repeat(count)}</span>` : '';
+    const balls = count > 0 ? `<span class="inline-flex items-center gap-0.5 text-base select-none">${'⚽'.repeat(count)}</span>` : '';
+    const mandante = lado === 'mandante';
+    const nome = `<span class="font-medium text-slate-200 text-sm md:text-base ${mandante ? 'text-right' : 'text-left'}">${escapeHtml(pName)}</span>`;
+    // o slot das bolas fica sempre no DOM para que o justify-between mantenha o alinhamento
+    const slotBolas = `<span class="shrink-0">${balls}</span>`;
 
     return `
-      <li class="flex items-center justify-between py-1 px-1.5 rounded-lg hover:bg-surface/50 transition">
-        <span class="font-medium text-slate-200 text-sm md:text-base">• ${escapeHtml(pName)}</span>
-        ${balls}
+      <li class="flex items-center justify-between gap-2 py-1 px-1.5 rounded-lg hover:bg-surface/50 transition">
+        ${mandante ? `${slotBolas}${nome}` : `${nome}${slotBolas}`}
       </li>
     `;
   };
 
   content.innerHTML = `
-    <div>
-      <div class="flex items-center gap-2 text-sm text-slate-400">
-        <span class="font-semibold text-slate-300">Partida Rodada ${match.round_number}</span>
-        <span>•</span>
-        <span class="text-emerald-400 font-bold">${match.played_at || ''} (Horário de Brasília)</span>
+    <!-- Placar centralizado entre as duas colunas de elenco (colunas laterais de mesma largura) -->
+    <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3 md:gap-4">
+      <div class="flex items-center justify-end gap-2 min-w-0 text-right">
+        ${isHomeWinner ? '<span class="text-2xl md:text-3xl leading-none" title="Vencedor">🏆</span>' : ''}
+        <span class="ds-c8c42c63-${homeColor.slice(1)} text-3xl md:text-4xl font-black break-words">${escapeHtml(match.home_team_name)}</span>
       </div>
-      <h3 class="text-2xl md:text-3xl font-black mt-2 flex items-center gap-2.5 flex-wrap">
-        <span class="ds-c8c42c63-${homeColor.slice(1)}">${escapeHtml(match.home_team_name)}</span>
-        <span class="text-white bg-pitch px-3 py-1 rounded-xl border border-borderLight text-lg md:text-xl font-black">${match.home_score} x ${match.away_score}</span>
-        <span class="ds-c8c42c63-${awayColor.slice(1)}">${escapeHtml(match.away_team_name)}</span>
-      </h3>
-      <p class="text-sm md:text-base text-slate-300 mt-2 font-medium">
-        ${match.is_draw ? 'Empate registrado' : `Vencedor: 🏆 <span class="ds-c8c42c63-${winnerColor.slice(1)} font-black text-base md:text-lg">${escapeHtml(isHomeWinner ? match.home_team_name : match.away_team_name)}</span>`}
-      </p>
+      <span class="text-white bg-pitch px-4 py-1.5 rounded-xl border border-borderLight text-2xl md:text-3xl font-black">${match.home_score} x ${match.away_score}</span>
+      <div class="flex items-center justify-start gap-2 min-w-0 text-left">
+        <span class="ds-c8c42c63-${awayColor.slice(1)} text-3xl md:text-4xl font-black break-words">${escapeHtml(match.away_team_name)}</span>
+        ${isAwayWinner ? '<span class="text-2xl md:text-3xl leading-none" title="Vencedor">🏆</span>' : ''}
+      </div>
     </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm pt-2">
@@ -4400,15 +5305,17 @@ async function verDetalhesPartida(matchId) {
           ? 'border-emerald-500/40 bg-emerald-950/20'
           : isHomeLoser
           ? 'border-rose-500/40 bg-rose-950/20'
+          : isDraw
+          ? 'border-yellow-400/50 bg-yellow-400/5'
           : 'border-borderLight'
       }">
-        <h4 class="font-bold text-base md:text-lg flex items-center justify-between pb-1 border-b border-borderLight/40">
-          <span class="ds-c8c42c63-${homeColor.slice(1)}">${escapeHtml(match.home_team_name)}</span>
+        <h4 class="font-bold text-base md:text-lg flex items-center justify-end pb-1 border-b border-borderLight/40">
           ${isHomeWinner ? '<span class="text-xs text-emerald-400 font-extrabold uppercase bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">Venceu</span>' : ''}
           ${isHomeLoser ? '<span class="text-xs text-rose-400 font-extrabold uppercase bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">Perdeu</span>' : ''}
+          ${isDraw ? '<span class="text-xs text-amber-400 font-extrabold uppercase bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">Empate</span>' : ''}
         </h4>
         <ul class="space-y-1 text-slate-200">
-          ${(match.home_players || []).map(renderPlayerItem).join("")}
+          ${(match.home_players || []).map((p) => renderPlayerItem(p, 'mandante')).join("")}
         </ul>
       </div>
 
@@ -4418,30 +5325,32 @@ async function verDetalhesPartida(matchId) {
           ? 'border-emerald-500/40 bg-emerald-950/20'
           : isAwayLoser
           ? 'border-rose-500/40 bg-rose-950/20'
+          : isDraw
+          ? 'border-yellow-400/50 bg-yellow-400/5'
           : 'border-borderLight'
       }">
-        <h4 class="font-bold text-base md:text-lg flex items-center justify-between pb-1 border-b border-borderLight/40">
-          <span class="ds-c8c42c63-${awayColor.slice(1)}">${escapeHtml(match.away_team_name)}</span>
+        <h4 class="font-bold text-base md:text-lg flex items-center justify-start pb-1 border-b border-borderLight/40">
           ${isAwayWinner ? '<span class="text-xs text-emerald-400 font-extrabold uppercase bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">Venceu</span>' : ''}
           ${isAwayLoser ? '<span class="text-xs text-rose-400 font-extrabold uppercase bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">Perdeu</span>' : ''}
+          ${isDraw ? '<span class="text-xs text-amber-400 font-extrabold uppercase bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">Empate</span>' : ''}
         </h4>
         <ul class="space-y-1 text-slate-200">
-          ${(match.away_players || []).map(renderPlayerItem).join("")}
+          ${(match.away_players || []).map((p) => renderPlayerItem(p, 'visitante')).join("")}
         </ul>
       </div>
     </div>
 
-    <div class="pt-3 border-t border-borderLight flex justify-end">
-      <button data-h-click="closeModal" class="px-5 py-2.5 bg-cardLight hover:bg-slate-700 text-white font-bold text-sm md:text-base rounded-xl transition">Fechar</button>
-    </div>
   `;
 
-  modal.classList.remove("hidden");
   refreshIcons();
 }
 
+function abrirModalDetalhesPartida(aoRenderizar, extras = {}) {
+  return abrirModal({ template: 'tpl-match-details', largura: 'xl', aoRenderizar, ...extras });
+}
+
 function closeModal() {
-  document.getElementById("modal-match-details")?.classList.add("hidden");
+  fecharModalDoTemplate('tpl-match-details');
 }
 
 async function limparHistorico() {
@@ -4453,7 +5362,10 @@ async function limparHistorico() {
   const confirmed = await showCustomConfirm(
     "Atenção: deseja realmente limpar todo o histórico salvo desta pelada?",
     "Limpar Histórico",
-    "Limpar Histórico"
+    "Limpar Histórico",
+    "Cancelar",
+    false,
+    { icone: 'triangle-alert' }
   );
   if (!confirmed) return;
 
@@ -4488,11 +5400,9 @@ async function carregarConfiguracoes() {
     const elPerTeam = document.getElementById("cfg-players-per-team");
     const elDuration = document.getElementById("cfg-duration");
     const elRounds = document.getElementById("cfg-rounds");
-    const elAlarmSound = document.getElementById("cfg-alarm-sound");
 
     if (elPerTeam) elPerTeam.value = cfg.players_per_team;
     if (elDuration) elDuration.value = cfg.match_duration_minutes;
-    if (elAlarmSound && cfg.alarm_sound) elAlarmSound.value = cfg.alarm_sound;
     if (elRounds) {
       if (cfg.championship_type) {
         elRounds.value = cfg.championship_type;
@@ -4500,30 +5410,63 @@ async function carregarConfiguracoes() {
         elRounds.value = cfg.total_rounds === 2 ? "double" : "single";
       }
     }
+    const elDraw = document.getElementById("cfg-king-draw-rule");
+    const elMaxWins = document.getElementById("cfg-king-max-wins");
+    if (elDraw) elDraw.value = cfg.king_draw_rule || "both";
+    if (elMaxWins) elMaxWins.value = cfg.king_max_consecutive_wins || 0;
+    const elStars = document.getElementById("cfg-stars-pct");
+    if (elStars) {
+      elStars.value = Number.isInteger(cfg.balance_stars_pct) ? cfg.balance_stars_pct : BALANCE_STARS_PCT_PADRAO;
+      atualizarRotuloEstrelas(elStars);
+    }
     atualizarVisibilidadeControlesFormato();
   } catch (e) {
     console.warn("Usando configurações padrão.");
+  } finally {
+    carregarSomAlarme();
   }
 }
 
+const FORMATO_INFO = {
+  single: { titulo: "Regras do Turno Único", dica: "Todos os times se enfrentam uma vez.", inicio: true, rei: false },
+  double: { titulo: "Regras do Turno e Retorno", dica: "Todos se enfrentam duas vezes, ida e volta.", inicio: true, rei: false },
+  king: { titulo: "Regras do Rei da Pelada", dica: "O vencedor fica em campo e o próximo da fila entra. As partidas são geradas uma a uma.", inicio: true, rei: true },
+  custom: { titulo: "Regras do Formato Livre", dica: "Você monta os confrontos com os times e rodadas que quiser.", inicio: false, rei: false }
+};
+
+// Mostra apenas as regras do formato escolhido e preenche os times de abertura
+function atualizarRegrasFormato() {
+  const tipo = state.config.championship_type || "single";
+  const info = FORMATO_INFO[tipo] || FORMATO_INFO.single;
+  const setVisible = (id, on) => { const el = document.getElementById(id); if (el) el.classList.toggle("hidden", !on); };
+  const title = document.getElementById("rules-format-title");
+  const hint = document.getElementById("cfg-format-hint");
+  if (title) title.textContent = info.titulo;
+  if (hint) hint.textContent = info.dica;
+  setVisible("rules-start", info.inicio);
+  setVisible("rules-king", info.rei);
+  setVisible("rules-none", !info.inicio && !info.rei);
+
+  const home = document.getElementById("cfg-first-home");
+  const away = document.getElementById("cfg-first-away");
+  if (!home || !away) return;
+  const teams = state.teams || [];
+  const opcoes = (sel, valor) => `<option value="">${sel}</option>` + teams.map(t =>
+    `<option value="${escapeHtml(t.id)}" ${t.id === valor ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("");
+  const ids = new Set(teams.map(t => t.id));
+  const h = ids.has(state.config.first_match_home_id) ? state.config.first_match_home_id : "";
+  const a = ids.has(state.config.first_match_away_id) ? state.config.first_match_away_id : "";
+  home.innerHTML = opcoes("Automático", h);
+  away.innerHTML = opcoes("Automático", a);
+  home.value = h;
+  away.value = a;
+}
+
 function atualizarVisibilidadeControlesFormato() {
-  const isCustom = state.config.championship_type === "custom";
+  atualizarRegrasFormato();
   const isLeader = state.role === "admin";
   const btnAdd = document.getElementById("btn-add-custom-match");
-  const btnRecreate = document.getElementById("btn-recreate-fixtures");
-  const actionLabel = document.getElementById("btn-fixtures-action-label");
-
-  if (btnAdd) {
-    btnAdd.classList.toggle("hidden", !isCustom || !isLeader);
-  }
-  const actionTitle = isCustom ? "Recriar Auto" : "Recriar Tabela";
-  if (btnRecreate) {
-    btnRecreate.title = actionTitle;
-    btnRecreate.setAttribute("aria-label", actionTitle);
-  }
-  if (actionLabel) {
-    actionLabel.textContent = actionTitle;
-  }
+  if (btnAdd) btnAdd.classList.toggle("hidden", !isLeader);
 }
 
 let autoSaveConfigTimeout = null;
@@ -4532,6 +5475,25 @@ let autoSaveConfigTimeout = null;
 function submitConfiguracoes(event) {
   event.preventDefault();
   autoSalvarConfiguracoes();
+}
+
+// Rótulo ao lado do controle de peso e balão de info de "Times Montados": mostram a divisão real
+function atualizarRotuloEstrelas(el) {
+  // Pelo despachante de eventos, o elemento chega como `this` (sem argumentos)
+  el = el || this;
+  if (!el) return;
+  const pct = parseInt(el.value, 10) || 0;
+  const label = document.getElementById("cfg-stars-label");
+  if (label) label.textContent = `${pct}% estrelas · ${100 - pct}% histórico`;
+  atualizarInfoBalanceamento(pct);
+}
+
+function atualizarInfoBalanceamento(pct) {
+  const texto = `Balanceamento: ${pct}% estrelas base + ${100 - pct}% histórico (vitórias e gols).`;
+  const btn = document.getElementById("info-balanceamento-btn");
+  const balao = document.getElementById("info-balanceamento-texto");
+  if (btn) btn.title = texto;
+  if (balao) balao.textContent = texto;
 }
 
 function autoSalvarConfiguracoes(immediate = false) {
@@ -4558,14 +5520,12 @@ async function salvarConfiguracoes(event) {
   const perTeamInput = document.getElementById("cfg-players-per-team");
   const durationInput = document.getElementById("cfg-duration");
   const roundsInput = document.getElementById("cfg-rounds");
-  const alarmSoundInput = document.getElementById("cfg-alarm-sound");
 
   if (!perTeamInput || !durationInput || !roundsInput) return;
 
   let perTeam = parseInt(perTeamInput.value, 10);
   let duration = parseInt(durationInput.value, 10);
   const selectedFormat = roundsInput.value;
-  const selectedAlarm = alarmSoundInput ? alarmSoundInput.value : (state.config.alarm_sound || "standard-emergency-warning-signal.mp3");
 
   if (isNaN(perTeam) || perTeam < 2) perTeam = 5;
   if (perTeam > 11) perTeam = 11;
@@ -4577,18 +5537,44 @@ async function salvarConfiguracoes(event) {
   let champType = selectedFormat;
   if (selectedFormat === "double") {
     rounds = 2;
-  } else if (selectedFormat === "custom") {
-    rounds = 0; // Indicador de custom
+  } else if (selectedFormat === "custom" || selectedFormat === "king") {
+    rounds = 0; // Indicador de formato sem tabela fixa (livre ou Rei da Pelada)
   } else {
     rounds = 1;
     champType = "single";
   }
 
+  const regrasAnteriores = snapshotRegras(state.config);
   state.config.players_per_team = perTeam;
   state.config.match_duration_minutes = duration;
   state.config.total_rounds = rounds;
   state.config.championship_type = champType;
-  state.config.alarm_sound = selectedAlarm;
+
+  const elHome = document.getElementById("cfg-first-home");
+  const elAway = document.getElementById("cfg-first-away");
+  let firstHome = elHome && elHome.value ? elHome.value : null;
+  let firstAway = elAway && elAway.value ? elAway.value : null;
+  if (firstHome && firstHome === firstAway) {
+    // Mesmo time nos dois lados: mantém o que acabou de ser escolhido e zera o outro
+    if (document.activeElement === elAway) firstHome = null; else firstAway = null;
+    if (elHome) elHome.value = firstHome || "";
+    if (elAway) elAway.value = firstAway || "";
+  }
+  state.config.first_match_home_id = firstHome;
+  state.config.first_match_away_id = firstAway;
+  const elDraw = document.getElementById("cfg-king-draw-rule");
+  const elMaxWins = document.getElementById("cfg-king-max-wins");
+  state.config.king_draw_rule = elDraw ? elDraw.value : "both";
+  let maxWins = elMaxWins ? parseInt(elMaxWins.value, 10) : 0;
+  if (isNaN(maxWins) || maxWins < 0) maxWins = 0;
+  if (maxWins > 50) maxWins = 50;
+  state.config.king_max_consecutive_wins = maxWins;
+  const elStars = document.getElementById("cfg-stars-pct");
+  let starsPct = elStars ? parseInt(elStars.value, 10) : 40;
+  if (isNaN(starsPct) || starsPct < 0) starsPct = 40;
+  if (starsPct > 100) starsPct = 100;
+  state.config.balance_stars_pct = starsPct;
+  atualizarBaseRegras(regrasAnteriores);
 
   try {
     if (!state.currentPelada || !state.currentPelada.code) {
@@ -4606,11 +5592,11 @@ async function salvarConfiguracoes(event) {
         window.auditTracker.track('update_config', 'settings_modal', 'action', {
           players_per_team: perTeam,
           duration: duration,
-          rounds: rounds,
-          alarm_sound: selectedAlarm
+          rounds: rounds
         });
       }
       atualizarVisibilidadeControlesFormato();
+      renderFixtures();
       sincronizarEstadoServidor();
       showToast("Parâmetros salvos!");
     }
@@ -4630,16 +5616,12 @@ function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 
-const DEFAULT_TEAM_PALETTE = [
-  { name: "Colete Verde", color: "#84cc16", badge: "🟢" },
-  { name: "Colete Laranja", color: "#f97316", badge: "🟠" },
-  { name: "Colete Azul", color: "#3b82f6", badge: "🔵" },
-  { name: "Colete Vermelho", color: "#ef4444", badge: "🔴" },
-  { name: "Colete Amarelo", color: "#eab308", badge: "🟡" },
-  { name: "Colete Preto", color: "#64748b", badge: "⚫" },
-  { name: "Colete Roxo", color: "#a855f7", badge: "🟣" },
-  { name: "Colete Branco", color: "#e2e8f0", badge: "⚪" },
-];
+// Paleta de cores de time vem do servidor (team_colors em GET /api/peladas/{code})
+function teamPalette() {
+  return (state.currentPelada && Array.isArray(state.currentPelada.team_colors))
+    ? state.currentPelada.team_colors
+    : [];
+}
 
 function getTeamColor(teamIdentifier, fallback = "#38bdf8") {
   if (!teamIdentifier) return fallback;
@@ -4663,12 +5645,12 @@ function getTeamColor(teamIdentifier, fallback = "#38bdf8") {
   if (lower.includes("amarelo") || lower.includes("yellow")) return "#eab308";
   if (lower.includes("preto") || lower.includes("black")) return "#94a3b8"; // tom mais visível em dark theme
   if (lower.includes("roxo") || lower.includes("purple") || lower.includes("violeta")) return "#a855f7";
-  if (lower.includes("branco") || lower.includes("white")) return "#f8fafc";
+  if (lower.includes("magenta")) return "#f0abfc";
   if (lower.includes("rosa") || lower.includes("pink")) return "#f472b6";
   if (lower.includes("cinza") || lower.includes("gray") || lower.includes("grey")) return "#94a3b8";
 
   // 3. Fallback na paleta padrão por índice se for numérico ou conhecido
-  const paletteMatch = DEFAULT_TEAM_PALETTE.find(p => p.name.toLowerCase() === lower);
+  const paletteMatch = teamPalette().find(p => `time ${p.label}`.toLowerCase() === lower);
   if (paletteMatch) return paletteMatch.color;
 
   return fallback;
@@ -4708,6 +5690,7 @@ const PDF_CORES = {
   prata: "#cbd5e1",
   bronze: "#cd7f32",
   azul: "#38bdf8",
+  roxo: "#a855f7",
   amarelo: "#facc15",
   derrota: "#f87171",
 };
@@ -4729,7 +5712,7 @@ function pdfFundo() {
     <div class="ds-a20c2c9a"></div>`;
 }
 
-const PDF_BOLA_AJUSTE_Y = -11;
+const PDF_LOGO_SRC = "/static/icons/icon-512.png";
 
 function pdfCabecalho(nomePelada, codigo, geradoEm) {
   const codigoHtml = codigo
@@ -4738,9 +5721,7 @@ function pdfCabecalho(nomePelada, codigo, geradoEm) {
   return `
     <table class="ds-960750ce"><tr>
       <td class="ds-d6a28982">
-        <table class="ds-371bfc04"><tr>
-          <td class="ds-6bc17abc"><span class="ds-8398e345">⚽</span></td>
-        </tr></table>
+        <img class="ds-pdf-logo" src="${PDF_LOGO_SRC}" alt="" width="46" height="46" />
       </td>
       <td class="ds-4d58fd8f">
         <div class="ds-288adda1">Fut<span class="ds-c6aa0a14">Match</span></div>
@@ -4764,8 +5745,8 @@ function pdfSecao(icone, cor, titulo, subtitulo, deslocamento = -8) {
     <div class="ds-ce80f992"></div>`;
 }
 
-function pdfCard(conteudo) {
-  return `<div class="ds-d6c06699">${conteudo}</div>`;
+function pdfCard(conteudo, classeExtra = "") {
+  return `<div class="ds-d6c06699 ${classeExtra}">${conteudo}</div>`;
 }
 
 function pdfKpi(rotulo, icone, cor, valor, sub, margemEsquerda, ehTexto) {
@@ -4815,7 +5796,7 @@ function pdfTabelaClassificacao(leaderboard, corPorNome) {
     </table>`;
 }
 
-function pdfColunaRanking(titulo, icone, cor, linhas, vazio) {
+function pdfColunaRanking(titulo, emoji, cor, linhas, vazio) {
   const ALTURA = 18;
   const ESPACO = 8;
   const LARGURA_PILULA = 96;
@@ -4844,7 +5825,7 @@ function pdfColunaRanking(titulo, icone, cor, linhas, vazio) {
   return `
     <table class="ds-3cfad0aa"><tr>
       <td class="ds-c59526ae-${cor.slice(1)}"></td>
-      <td class="ds-8b814190-${cor.slice(1)}">${pdfIcone(icone, cor, 15)}</td>
+      <td class="ds-8b814190-${cor.slice(1)}"><span class="ds-emoji-ranking">${emoji}</span></td>
       <td class="ds-f7f24ccb"><span class="ds-5c2dd240">${titulo}</span></td>
     </tr></table>
     ${corpo}`;
@@ -5099,8 +6080,8 @@ function pdfTopoResumo(d) {
     <div class="ds-c40d127c">
       ${pdfKpi("Partidas Jogadas", "flag", PDF_CORES.destaque, d.totalPartidas, "&nbsp;", 0, false)}
       ${pdfKpi("Total de Gols", "goal", PDF_CORES.destaque, d.totalGols, `Média: <strong class="ds-c6aa0a14">${d.media}</strong> por partida`, 12, false)}
-      ${pdfKpi("Artilheiro Máximo", "award", PDF_CORES.ouro, pdfTruncar(d.artilheiro, 15), `${d.artilheiroGols} gols marcados`, 12, true)}
-      ${pdfKpi("Maior Vencedor", "crown", PDF_CORES.amarelo, pdfTruncar(d.vencedor, 15), `${d.vencedorVitorias} vitórias (${d.vencedorTaxa}%)`, 12, true)}
+      ${pdfKpi("Artilheiro Máximo", "award", PDF_CORES.ouro, pdfTruncar(d.artilheiro, 15), `<span class="ds-kpi-ouro">${d.artilheiroGols} gols marcados</span>`, 12, true)}
+      ${pdfKpi("Maior Vencedor", "crown", PDF_CORES.amarelo, pdfTruncar(d.vencedor, 15), `<span class="ds-kpi-amarelo">${d.vencedorVitorias} vitórias (${d.vencedorTaxa}%)</span>`, 12, true)}
     </div>`;
   return `${pdfCabecalho(d.nomePelada, d.codigo, d.geradoEm)}<div class="ds-1dd9a5e2">${kpis}</div>`;
 }
@@ -5127,6 +6108,15 @@ function pdfCardGrafico(titulo, icone, cor, grafico) {
   return pdfCard(pdfSecao(icone, cor, titulo, "", -8) + corpo);
 }
 
+// Linha corrida das peladas da corrente: "Nome #CODIGO • Nome #CODIGO", a atual primeiro
+function pdfLinhaPool(peladas) {
+  if (!peladas || peladas.length <= 1) {
+    return `<div class="ds-pool-linha">Esta pelada ainda não está vinculada a outras peladas.</div>`;
+  }
+  const itens = peladas.map((p, idx) => `${escapeHtml(pdfTruncar(p.name, 28))} <span class="ds-pool-codigo">#${escapeHtml(p.code)}</span>${idx === 0 ? ' <span class="ds-pool-atual">(atual)</span>' : ''}`);
+  return `<div class="ds-pool-linha">${itens.join('<span class="ds-pool-bolinha">•</span>')}</div>`;
+}
+
 function pdfBlocosResumo(d) {
   const classificacao = pdfCard(
     pdfSecao("list-ordered", PDF_CORES.destaque, "Tabela Geral de Classificação", "") +
@@ -5136,16 +6126,17 @@ function pdfBlocosResumo(d) {
   const destaques = pdfCard(
     pdfSecao("flame", PDF_CORES.ouro, "Destaques Individuais", "Quem mais balançou as redes e quem mais venceu") +
     `<table class="ds-b468078e"><tr>
-       <td class="ds-a1be0881">${pdfColunaRanking("Top goleadores", "goal", PDF_CORES.destaque, d.artilheiros, "Nenhum gol atribuído ainda.")}</td>
-       <td class="ds-28dd0841">${pdfColunaRanking("Mais vitoriosos (taxa de vitória)", "crown", PDF_CORES.amarelo, d.vitoriosos, "Sem jogos concluídos.")}</td>
+       <td class="ds-a1be0881">${pdfColunaRanking("Top goleadores", "⚽", PDF_CORES.destaque, d.artilheiros, "Nenhum gol atribuído ainda.")}</td>
+       <td class="ds-28dd0841">${pdfColunaRanking("Mais vitoriosos", "🏆", PDF_CORES.amarelo, d.vitoriosos, "Sem jogos concluídos.")}</td>
      </tr></table>`
   );
 
   const aproveitamento = pdfCardGrafico("Aproveitamento", "target", PDF_CORES.destaque, d.graficos.aproveitamento);
   const media = pdfCardGrafico("Média de gols", "goal", PDF_CORES.destaque, d.graficos.media);
+  const pool = pdfCard(pdfSecao("link", PDF_CORES.roxo, "Pool de Peladas", "") + pdfLinhaPool(d.pool), "ds-card-roxo");
 
   // padding-top (e não margin-top) para que a medição do bloco inclua o espaçamento
-  return [classificacao, destaques, aproveitamento, media].map((html) => `<div class="ds-1dd9a5e2">${html}</div>`);
+  return [classificacao, destaques, aproveitamento, media, pool].map((html) => `<div class="ds-1dd9a5e2">${html}</div>`);
 }
 
 /* Agrupa blocos (já medidos) em folhas: a primeira respeita a altura do topo e as demais, a do cabeçalho. */
@@ -5219,6 +6210,7 @@ async function pdfCapturarPagina(conteudo) {
 }
 
 async function exportarRelatorioPDF() {
+  if (state.role !== 'admin') return;
   if (window.SoundManager) window.SoundManager.play('efeitos');
   const btn = document.getElementById("btn-export-pdf");
   const btnText = document.getElementById("btn-export-pdf-text");
@@ -5280,9 +6272,16 @@ async function exportarRelatorioPDF() {
       aproveitamento: await pdfGraficoEvolucao("consistency"),
       media: await pdfGraficoEvolucao("avg_goals"),
     };
+    // Corrente da pool: nome de cada pelada (a atual já veio no info)
+    const poolPeladas = await Promise.all((info.chain_codes || [pCode]).map(async (c) => {
+      if (c === pCode) return { code: c, name: pName };
+      const outra = await fetch(`/api/peladas/${c}`).then((r) => r.json()).catch(() => ({}));
+      return { code: c, name: outra.name || c };
+    }));
     const dadosResumo = {
       ...base,
       graficos,
+      pool: poolPeladas,
       totalPartidas: summary.total_matches,
       totalGols: summary.total_goals,
       media: (summary.avg_goals_per_match || 0).toFixed(1),
@@ -5373,7 +6372,7 @@ async function exportarRelatorioPDF() {
     showToast("PDF gerado e baixado com sucesso!");
   } catch (err) {
     console.error("Erro ao gerar PDF:", err);
-    await showCustomAlert("Houve uma falha ao gerar o arquivo PDF. Verifique o console.", "Erro ao Gerar PDF");
+    await showCustomAlert("Houve uma falha ao gerar o arquivo PDF. Verifique o console.", "Erro ao Gerar PDF", false, { icone: 'circle-x' });
   } finally {
     updatePdfExportButtonState();
     if (btnText) btnText.textContent = originalText;
