@@ -1,4 +1,4 @@
-const CACHE_NAME = 'futmatch-v99';
+const CACHE_NAME = 'futmatch-v100';
 const STATIC_ASSETS = [
   '/',
   '/static/index.html',
