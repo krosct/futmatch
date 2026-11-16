@@ -49,6 +49,18 @@ MATCH_INSERT_SQL = """
 
 def _match_params(match: Match, pelada_code: str) -> Tuple[Any, ...]:
     """Valores de uma partida na ordem de MATCH_INSERT_SQL."""
+    winner_team_id = match.winner_team_id
+    is_draw = match.is_draw
+    if match.finished:
+        if match.home_score == match.away_score:
+            is_draw = True
+            winner_team_id = None
+        else:
+            is_draw = False
+            if not winner_team_id:
+                winner_team_id = (
+                    match.home_team_id if match.home_score > match.away_score else match.away_team_id
+                )
     return (
         match.id,
         match.round_number,
@@ -61,8 +73,8 @@ def _match_params(match: Match, pelada_code: str) -> Tuple[Any, ...]:
         json.dumps(match.home_players, ensure_ascii=False),
         json.dumps(match.away_players, ensure_ascii=False),
         json.dumps(match.events, ensure_ascii=False),
-        match.winner_team_id,
-        1 if match.is_draw else 0,
+        winner_team_id,
+        1 if is_draw else 0,
         1 if match.finished else 0,
         match.played_at,
         match.notes,
@@ -145,27 +157,45 @@ class SQLiteMatchRepository(MatchRepositoryPort):
             await db.execute(MATCHES_SCHEMA)
             return
         normalized_sql = re.sub(r"\s+", "", row[0] or "").lower()
-        if "primarykey(pelada_code,id)" in normalized_sql:
-            return
-
-        cursor = await db.execute("PRAGMA table_info(matches)")
-        existing = {r[1] for r in await cursor.fetchall()}
-        source = ", ".join(
-            ("COALESCE(pelada_code, '')" if c == "pelada_code" else c) if c in existing else ("''" if c == "pelada_code" else "NULL")
-            for c in MATCH_COLUMNS
-        )
-        await db.execute("BEGIN")
-        try:
-            await db.execute("ALTER TABLE matches RENAME TO matches_legacy")
-            await db.execute(MATCHES_SCHEMA)
-            await db.execute(
-                f"INSERT INTO matches ({', '.join(MATCH_COLUMNS)}) SELECT {source} FROM matches_legacy"
+        if "primarykey(pelada_code,id)" not in normalized_sql:
+            cursor = await db.execute("PRAGMA table_info(matches)")
+            existing = {r[1] for r in await cursor.fetchall()}
+            source = ", ".join(
+                ("COALESCE(pelada_code, '')" if c == "pelada_code" else c) if c in existing else ("''" if c == "pelada_code" else "NULL")
+                for c in MATCH_COLUMNS
             )
-            await db.execute("DROP TABLE matches_legacy")
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            raise
+            await db.execute("BEGIN")
+            try:
+                await db.execute("ALTER TABLE matches RENAME TO matches_legacy")
+                await db.execute(MATCHES_SCHEMA)
+                await db.execute(
+                    f"INSERT INTO matches ({', '.join(MATCH_COLUMNS)}) SELECT {source} FROM matches_legacy"
+                )
+                await db.execute("DROP TABLE matches_legacy")
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+
+        await db.execute(
+            """
+            UPDATE matches
+            SET winner_team_id = CASE
+                WHEN home_score > away_score THEN home_team_id
+                WHEN away_score > home_score THEN away_team_id
+                ELSE NULL
+            END,
+            is_draw = CASE
+                WHEN home_score = away_score THEN 1
+                ELSE 0
+            END
+            WHERE finished = 1
+              AND (
+                (home_score != away_score AND (winner_team_id IS NULL OR winner_team_id = ''))
+                OR (home_score = away_score AND (is_draw = 0 OR winner_team_id IS NOT NULL))
+              )
+            """
+        )
 
     async def create_pelada(self, code: str, password_hash: str, name: str) -> PeladaSession:
         created_at = datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S")
