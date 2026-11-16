@@ -164,3 +164,71 @@ async def test_historico_e_pool_seguem_tabela_de_jogos(temp_db: SQLiteMatchRepos
     assert metrics["summary"]["total_matches"] == 0
     assert metrics["summary"]["total_goals"] == 0
     assert metrics["top_scorers"] == [] or metrics["top_scorers"][0]["goals"] == 0
+
+
+@pytest.mark.asyncio
+async def test_init_db_backfills_missing_winner_team_id(tmp_path):
+    import aiosqlite
+
+    db_path = str(tmp_path / "backfill.db")
+    repo = SQLiteMatchRepository(db_path=db_path)
+    await repo.init_db()
+    await repo.create_pelada("BF01", "hash", "Pelada Backfill")
+
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO matches (
+                id, round_number, home_team_id, home_team_name,
+                away_team_id, away_team_name, home_score, away_score,
+                home_players, away_players, events, winner_team_id,
+                is_draw, finished, played_at, notes, pelada_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "m1", 1, "t1", "Time Azul",
+                "t2", "Time Verde", 3, 1,
+                "[]", "[]", "[]", None,
+                0, 1, "13/11/2026 20:02:36", "", "BF01",
+            ),
+        )
+        await db.commit()
+
+    await repo.init_db()
+    match = await repo.get_match("m1", "BF01")
+    assert match is not None
+    assert match.winner_team_id == "t1"
+    assert match.is_draw is False
+
+
+@pytest.mark.asyncio
+async def test_init_db_backfills_peladas_fixtures_json(tmp_path):
+    import json
+    import aiosqlite
+
+    db_path = str(tmp_path / "backfill_json.db")
+    repo = SQLiteMatchRepository(db_path=db_path)
+    await repo.init_db()
+    await repo.create_pelada("BF02", "hash", "Pelada Fixtures JSON")
+
+    stale_fixtures = [
+        {"id": "m_1", "home_team_id": "t1", "away_team_id": "t2", "home_score": 0, "away_score": 0, "winner_team_id": None, "is_draw": True, "finished": True},
+        {"id": "m_2", "home_team_id": "t1", "away_team_id": "t2", "home_score": 3, "away_score": 1, "winner_team_id": None, "is_draw": False, "finished": True},
+        {"id": "m_3", "home_team_id": "t1", "away_team_id": "t2", "home_score": 2, "away_score": 2, "winner_team_id": None, "is_draw": False, "finished": True},
+    ]
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "UPDATE peladas SET fixtures = ? WHERE code = ?",
+            (json.dumps(stale_fixtures), "BF02"),
+        )
+        await db.commit()
+
+    await repo.init_db()
+    session = await repo.get_pelada("BF02")
+    assert session is not None
+    assert session.fixtures[0]["winner_team_id"] is None
+    assert session.fixtures[0]["is_draw"] is True
+    assert session.fixtures[1]["winner_team_id"] == "t1"
+    assert session.fixtures[1]["is_draw"] is False
+    assert session.fixtures[2]["winner_team_id"] is None
+    assert session.fixtures[2]["is_draw"] is True
