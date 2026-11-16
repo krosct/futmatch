@@ -126,6 +126,7 @@ class SQLiteMatchRepository(MatchRepositoryPort):
                 pass
 
             await self._migrate_matches_table(db)
+            await self._backfill_peladas_fixtures(db)
 
             # Cor branca saiu da paleta: times salvos com ela passam para magenta claro (idempotente)
             await db.execute(
@@ -196,6 +197,41 @@ class SQLiteMatchRepository(MatchRepositoryPort):
               )
             """
         )
+
+    async def _backfill_peladas_fixtures(self, db: aiosqlite.Connection) -> None:
+        """Normaliza `winner_team_id` e `is_draw` nos JSONs de `peladas.fixtures`."""
+        cursor = await db.execute("SELECT code, fixtures FROM peladas WHERE fixtures IS NOT NULL AND fixtures != '[]'")
+        rows = await cursor.fetchall()
+        for code, raw_fixtures in rows:
+            try:
+                fixtures = json.loads(raw_fixtures)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if not isinstance(fixtures, list):
+                continue
+            changed = False
+            for f in fixtures:
+                if not isinstance(f, dict) or not f.get("finished"):
+                    continue
+                hs = f.get("home_score", 0)
+                aws = f.get("away_score", 0)
+                if hs == aws:
+                    if not f.get("is_draw") or f.get("winner_team_id") is not None:
+                        f["is_draw"] = True
+                        f["winner_team_id"] = None
+                        changed = True
+                else:
+                    expected_winner = f.get("home_team_id") if hs > aws else f.get("away_team_id")
+                    if f.get("is_draw") or not f.get("winner_team_id"):
+                        f["is_draw"] = False
+                        if not f.get("winner_team_id"):
+                            f["winner_team_id"] = expected_winner
+                        changed = True
+            if changed:
+                await db.execute(
+                    "UPDATE peladas SET fixtures = ? WHERE code = ?",
+                    (json.dumps(fixtures, ensure_ascii=False), code),
+                )
 
     async def create_pelada(self, code: str, password_hash: str, name: str) -> PeladaSession:
         created_at = datetime.now(BRT).strftime("%d/%m/%Y %H:%M:%S")
